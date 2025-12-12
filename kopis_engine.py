@@ -213,15 +213,24 @@ class ParallelBranches:
                 vz -= gravity * delta_time  # Gravity always pulls down (decreases vz)
             
             # Apply friction (only to X and Y, not Z)
-            # Only apply friction if entity is not actively being controlled by input
-            # (Player input will override friction each frame)
-            vx *= friction_coefficient
-            vy *= friction_coefficient
-            # Stop very small velocities to prevent jitter
-            if abs(vx) < 1.0:
-                vx = 0.0
-            if abs(vy) < 1.0:
-                vy = 0.0
+            # Doom-style: Player has no friction (instant movement), NPCs have friction
+            is_player = entity.id == 'player'
+            if not is_player:
+                # Apply friction to NPCs only (not player - Doom-style instant movement)
+                vx *= friction_coefficient
+                vy *= friction_coefficient
+                # Stop very small velocities to prevent jitter
+                if abs(vx) < 1.0:
+                    vx = 0.0
+                if abs(vy) < 1.0:
+                    vy = 0.0
+            else:
+                # Player: Doom-style - stop immediately when not moving (no friction, but instant stop)
+                # Velocity is set directly by input, so if it's very small, just stop
+                if abs(vx) < 0.1:
+                    vx = 0.0
+                if abs(vy) < 0.1:
+                    vy = 0.0
             
             # Update position based on velocity (infinite world - no bounds)
             new_x = x + vx * delta_time
@@ -826,10 +835,10 @@ class KopisEngine:
     
     def _process_player_input(self, input_data: Dict[str, Any], delta_time: float, sound_manager: Optional['SoundManager'] = None, screen_width: int = 800, screen_height: int = 600):
         """
-        Process player input for movement (3D FPV)
-        WASD keys control player movement relative to mouse cursor direction on screen
+        Process player input for movement (3D FPV) - Doom-style
+        WASD keys control player movement relative to camera yaw (where you're looking)
         Space bar controls jumping (Z axis)
-        Movement direction is based on where the mouse cursor is pointing on screen
+        Movement is instant (no acceleration/deceleration) like classic Doom
         """
         if not self.player:
             return
@@ -837,8 +846,8 @@ class KopisEngine:
         import math
         
         keys = input_data.get('keys', {})
-        mouse_data = input_data.get('mouse', {})
-        player_speed = 200.0  # pixels per second
+        player_speed = 200.0  # pixels per second (Doom-style fast movement)
+        
         # Calculate jump force for realistic 10-foot room
         # Scale: 1 foot = 30 units, so 10 feet = 300 units
         # Gravity: 966 units/s² (32.2 ft/s² * 30 units/ft)
@@ -860,52 +869,27 @@ class KopisEngine:
         # Check if player is on ground
         on_ground = self.player.properties.get('on_ground', False)
         
-        # Reset X/Y velocity based on input (Z velocity preserved, handled by physics/gravity)
+        # Doom-style: Reset X/Y velocity based on input (instant velocity changes, no acceleration)
         vx = 0.0
         vy = 0.0
         # vz is preserved from above (will be updated if jumping, otherwise kept for physics)
         
-        # Calculate movement direction based on mouse cursor position on screen
-        mouse_x = mouse_data.get('x', screen_width // 2)
-        mouse_y = mouse_data.get('y', screen_height // 2)
+        # Calculate movement direction based on camera yaw (Doom-style)
+        # Camera yaw: 0 = looking along -Y (north), 90 = looking along +X (east), etc.
+        camera_yaw = self.camera_yaw
+        yaw_rad = math.radians(camera_yaw)
         
-        # Calculate direction from screen center to mouse cursor
-        screen_center_x = screen_width // 2
-        screen_center_y = screen_height // 2
-        mouse_dx = mouse_x - screen_center_x
-        mouse_dy = mouse_y - screen_center_y
+        # Forward direction: sin(yaw) for X, -cos(yaw) for Y
+        # This makes yaw=0 point along -Y (forward/north)
+        forward_x = math.sin(yaw_rad)
+        forward_y = -math.cos(yaw_rad)
         
-        # Calculate angle from screen center to mouse (in screen space)
-        # In screen space: (0, 0) is top-left, X increases right, Y increases down
-        # We want: mouse at top = forward (negative Y in world), mouse at right = right (positive X in world)
-        if abs(mouse_dx) < 1.0 and abs(mouse_dy) < 1.0:
-            # Mouse is at center, use camera yaw as fallback
-            camera_yaw = self.camera_yaw
-            yaw_rad = math.radians(camera_yaw)
-            forward_x = math.sin(yaw_rad)
-            forward_y = -math.cos(yaw_rad)
-            right_x = math.cos(yaw_rad)
-            right_y = math.sin(yaw_rad)
-        else:
-            # Calculate angle from center to mouse
-            # atan2(dy, dx) gives angle where 0 = right, 90 = down, -90 = up, 180/-180 = left
-            angle_rad = math.atan2(mouse_dy, mouse_dx)
-            
-            # Convert to world space direction
-            # In world space: forward is -Y (up on screen), right is +X (right on screen)
-            # Screen: mouse at top (negative dy) = forward (-Y), mouse at right (positive dx) = right (+X)
-            # So: forward direction is -90 degrees from screen angle
-            world_angle = angle_rad - math.pi / 2.0  # Rotate -90 degrees
-            
-            # Calculate forward and right vectors based on mouse direction
-            forward_x = math.cos(world_angle)
-            forward_y = math.sin(world_angle)
-            
-            # Right direction is 90 degrees clockwise from forward
-            right_x = -forward_y  # Perpendicular to forward
-            right_y = forward_x
+        # Right direction: cos(yaw) for X, sin(yaw) for Y
+        # This is 90 degrees clockwise from forward
+        right_x = math.cos(yaw_rad)
+        right_y = math.sin(yaw_rad)
         
-        # Process movement keys relative to camera direction
+        # Process movement keys relative to camera direction (Doom-style)
         move_forward = 0.0
         move_right = 0.0
         
@@ -914,23 +898,23 @@ class KopisEngine:
         if keys.get('s', False):
             move_forward -= 1.0  # Move backward
         if keys.get('a', False):
-            move_right -= 1.0  # Move left (negative right)
+            move_right -= 1.0  # Move left (strafe left)
         if keys.get('d', False):
-            move_right += 1.0  # Move right
+            move_right += 1.0  # Move right (strafe right)
         
-        # Calculate velocity in world space based on camera-relative movement
+        # Calculate velocity in world space based on camera-relative movement (Doom-style)
         if move_forward != 0.0 or move_right != 0.0:
-            # Normalize diagonal movement
+            # Normalize diagonal movement to prevent faster diagonal movement
             move_magnitude = math.sqrt(move_forward**2 + move_right**2)
             if move_magnitude > 0.0:
                 move_forward /= move_magnitude
                 move_right /= move_magnitude
-                # Apply diagonal normalization factor
+                # Apply diagonal normalization factor (Doom-style: diagonal movement is slower)
                 if abs(move_forward) > 0.1 and abs(move_right) > 0.1:
-                    move_forward *= 0.707  # sqrt(2)/2
+                    move_forward *= 0.707  # sqrt(2)/2 - normalize diagonal
                     move_right *= 0.707
             
-            # Calculate world-space velocity
+            # Calculate world-space velocity (instant, no acceleration - Doom-style)
             vx = (forward_x * move_forward + right_x * move_right) * player_speed
             vy = (forward_y * move_forward + right_y * move_right) * player_speed
         
@@ -2020,10 +2004,18 @@ class PygameRenderer:
             raise ImportError("pygame is not available. Install with: pip install pygame")
         
         pygame.init()
-        self.width = width
-        self.height = height
-        self.screen = pygame.display.set_mode((width, height))
-        pygame.display.set_caption("Kopis Engine")
+        self.fullscreen = True  # Start in fullscreen mode
+        if self.fullscreen:
+            # Get desktop resolution for fullscreen
+            info = pygame.display.Info()
+            self.width = info.current_w
+            self.height = info.current_h
+            self.screen = pygame.display.set_mode((self.width, self.height), pygame.FULLSCREEN)
+        else:
+            self.width = width
+            self.height = height
+            self.screen = pygame.display.set_mode((width, height))
+        pygame.display.set_caption("Kopis Engine - Press F11 to toggle fullscreen")
         self.clock = pygame.time.Clock()
         self.maze = maze
         self.mouse_captured = False  # Track mouse capture state
@@ -2048,6 +2040,23 @@ class PygameRenderer:
         # Font
         self.font = pygame.font.Font(None, 24)
         self.small_font = pygame.font.Font(None, 18)
+    
+    def toggle_fullscreen(self):
+        """Toggle between fullscreen and windowed mode"""
+        self.fullscreen = not self.fullscreen
+        if self.fullscreen:
+            # Get desktop resolution for fullscreen
+            import pygame
+            info = pygame.display.Info()
+            self.width = info.current_w
+            self.height = info.current_h
+            self.screen = pygame.display.set_mode((self.width, self.height), pygame.FULLSCREEN)
+        else:
+            # Return to windowed mode
+            self.width = 800
+            self.height = 600
+            self.screen = pygame.display.set_mode((self.width, self.height))
+        pygame.display.set_caption("Kopis Engine - Press F11 for fullscreen")
     
     def world_to_screen(self, world_pos, camera_pos, camera_yaw: float = 0.0, camera_pitch: float = 0.0, camera_roll: float = 0.0, fpv_mode: bool = False) -> Tuple[int, int]:
         """Convert 3D world coordinates to screen coordinates with perspective projection (6DOF)"""
@@ -2232,6 +2241,82 @@ class PygameRenderer:
         # If area is positive, face is likely front-facing (simplified check)
         return abs(area) > 100  # Minimum area threshold
     
+    def _raycast_wall(self, cam_x: float, cam_y: float, ray_dir_x: float, ray_dir_y: float, 
+                      max_depth: float = 1000.0) -> Optional[Tuple[float, int]]:
+        """
+        Raycast to find wall intersection using DDA algorithm (Doom-style).
+        Returns (perpendicular_distance, side) where side is 0 for X-side, 1 for Y-side.
+        Returns None if no wall found.
+        """
+        import math
+        
+        # Avoid division by zero
+        if abs(ray_dir_x) < 0.0001:
+            ray_dir_x = -0.0001 if ray_dir_x < 0 else 0.0001
+        if abs(ray_dir_y) < 0.0001:
+            ray_dir_y = -0.0001 if ray_dir_y < 0 else 0.0001
+        
+        # Get cell size from maze
+        cell_size = self.maze.cell_size if self.maze else 50.0
+        
+        # DDA algorithm
+        map_x = int(cam_x / cell_size)
+        map_y = int(cam_y / cell_size)
+        
+        delta_dist_x = abs(1.0 / ray_dir_x)
+        delta_dist_y = abs(1.0 / ray_dir_y)
+        
+        # Determine step direction and initial side distances
+        if ray_dir_x < 0:
+            step_x = -1
+            side_dist_x = (cam_x / cell_size - map_x) * delta_dist_x
+        else:
+            step_x = 1
+            side_dist_x = (map_x + 1.0 - cam_x / cell_size) * delta_dist_x
+        
+        if ray_dir_y < 0:
+            step_y = -1
+            side_dist_y = (cam_y / cell_size - map_y) * delta_dist_y
+        else:
+            step_y = 1
+            side_dist_y = (map_y + 1.0 - cam_y / cell_size) * delta_dist_y
+        
+        # Perform DDA
+        hit = False
+        side = 0
+        perp_wall_dist = 0.0
+        steps = 0
+        max_steps = int(max_depth / cell_size) + 1
+        
+        while not hit and steps < max_steps:
+            if side_dist_x < side_dist_y:
+                side_dist_x += delta_dist_x
+                map_x += step_x
+                side = 0
+            else:
+                side_dist_y += delta_dist_y
+                map_y += step_y
+                side = 1
+            steps += 1
+            
+            # Check if we hit a wall
+            if self.maze:
+                chunk_x, chunk_y = self.maze._get_chunk_coords((map_x * cell_size, map_y * cell_size))
+                chunk = self.maze._get_or_create_chunk(chunk_x, chunk_y)
+                local_x = ((map_x % self.maze.chunk_size) + self.maze.chunk_size) % self.maze.chunk_size
+                local_y = ((map_y % self.maze.chunk_size) + self.maze.chunk_size) % self.maze.chunk_size
+                
+                if (local_x, local_y) in chunk.walls:
+                    hit = True
+                    if side == 0:
+                        perp_wall_dist = (map_x - cam_x / cell_size + (1 - step_x) / 2.0) / ray_dir_x
+                    else:
+                        perp_wall_dist = (map_y - cam_y / cell_size + (1 - step_y) / 2.0) / ray_dir_y
+        
+        if hit:
+            return (perp_wall_dist, side)
+        return None
+    
     def render(self, entities: List[GameEntity], camera_pos, frame_count: int, fps: float, 
                camera_yaw: float = 0.0, camera_pitch: float = 0.0, camera_roll: float = 0.0, fpv_mode: bool = False):
         """Render all entities to the screen (3D with perspective, FPV support)"""
@@ -2247,240 +2332,132 @@ class PygameRenderer:
         # Draw maze if available
         if self.maze:
             if fpv_mode:
-                # Render 3D walls in first-person view
-                # Make walls actual cubes (all dimensions equal to cell_size)
-                wall_height = self.maze.cell_size  # Same as width and depth for perfect cubes
-                # Reduce view distance for better performance (only render nearby walls)
-                wall_boxes = self.maze.get_wall_boxes_3d(camera_pos, view_distance=300.0, wall_height=wall_height)
-                
-                # Sort walls by distance (back to front for proper rendering)
+                # Doom-style raycasting renderer
                 import math
-                wall_distances = []
-                for box in wall_boxes:
-                    # Extract box coordinates (handle both with and without color)
-                    if len(box) == 7:
-                        bx, by, bz, bw, bh, bd, _ = box
-                    else:
-                        bx, by, bz, bw, bh, bd = box
-                    # Calculate distance from camera to wall center
-                    if len(camera_pos) == 3:
-                        cx, cy, cz = camera_pos
-                    else:
-                        cx, cy = camera_pos
-                        cz = 0.0
-                    dist = math.sqrt((bx + bw/2 - cx)**2 + (by + bd/2 - cy)**2 + (bz + bh/2 - cz)**2)
-                    wall_distances.append((dist, box))
                 
-                # Calculate depth for each wall (distance along view direction)
-                # Sort by depth (farthest first, so closer walls render on top)
-                wall_depths = []
-                for dist, box in wall_distances:
-                    if len(box) == 7:
-                        bx, by, bz, bw, bh, bd, _ = box
+                FOV = 60.0  # Field of view in degrees
+                MAX_DEPTH = 1000.0  # Maximum ray distance
+                CEILING_LEVEL = 300.0  # Ceiling height
+                CAMERA_HEIGHT_OFFSET = 150.0  # Eye level
+                
+                # Extract camera position
+                if len(camera_pos) == 3:
+                    cam_x, cam_y, cam_z = camera_pos
+                else:
+                    cam_x, cam_y = camera_pos
+                    cam_z = 0.0
+                
+                # Pre-calculate direction vectors
+                yaw_rad = math.radians(camera_yaw)
+                pitch_rad = math.radians(camera_pitch)
+                
+                forward_x = math.sin(yaw_rad)
+                forward_y = -math.cos(yaw_rad)
+                right_x = math.cos(yaw_rad)
+                right_y = math.sin(yaw_rad)
+                
+                # Draw floor and ceiling first (Doom-style)
+                half_height = self.height / 2
+                horizon_y = half_height - math.tan(pitch_rad) * (self.height / 2)
+                
+                # Ceiling
+                pygame.draw.rect(self.screen, (26, 26, 26), (0, 0, self.width, max(0, int(horizon_y))))
+                
+                # Floor
+                pygame.draw.rect(self.screen, (42, 42, 42), (0, min(self.height, int(horizon_y)), self.width, self.height))
+                
+                # Raycast for each column
+                cell_size = self.maze.cell_size
+                ray_results = []
+                
+                for x in range(self.width):
+                    # Calculate ray angle (screen space to world space)
+                    camera_x = 2.0 * x / self.width - 1.0  # -1 to 1
+                    ray_dir_x = forward_x + right_x * camera_x * math.tan(math.radians(FOV / 2.0))
+                    ray_dir_y = forward_y + right_y * camera_x * math.tan(math.radians(FOV / 2.0))
+                    
+                    # Raycast to find wall
+                    result = self._raycast_wall(cam_x, cam_y, ray_dir_x, ray_dir_y, MAX_DEPTH)
+                    
+                    if result:
+                        perp_wall_dist, side = result
+                        distance = perp_wall_dist * cell_size
+                        
+                        # Calculate wall height
+                        line_height = abs(self.height / perp_wall_dist) if perp_wall_dist > 0 else self.height
+                        draw_start = -line_height / 2 + self.height / 2 + math.tan(pitch_rad) * (self.height / 2)
+                        draw_end = line_height / 2 + self.height / 2 + math.tan(pitch_rad) * (self.height / 2)
+                        
+                        # Calculate wall color based on distance and side
+                        brightness = max(0.3, min(1.0, 1.0 - distance / 500.0))
+                        
+                        # Get wall color (deterministic based on map position)
+                        map_x = int((cam_x + ray_dir_x * perp_wall_dist * cell_size) / cell_size)
+                        map_y = int((cam_y + ray_dir_y * perp_wall_dist * cell_size) / cell_size)
+                        
+                        # Generate deterministic color
+                        seed = hash(f"{map_x}_{map_y}") % 1000000
+                        rng = (seed * 9301 + 49297) % 233280 / 233280
+                        base_r = int(30 + rng * 50)
+                        base_g = int(25 + rng * 35)
+                        base_b = int(20 + rng * 30)
+                        
+                        # Darker on sides for depth
+                        wall_r = int(base_r * brightness * (0.8 if side == 1 else 1.0))
+                        wall_g = int(base_g * brightness * (0.8 if side == 1 else 1.0))
+                        wall_b = int(base_b * brightness * (0.8 if side == 1 else 1.0))
+                        
+                        # Draw wall column
+                        pygame.draw.line(self.screen, (wall_r, wall_g, wall_b), 
+                                       (x, max(0, int(draw_start))), 
+                                       (x, min(self.height, int(draw_end))))
+                        
+                        # Store ray result for sprite rendering
+                        ray_results.append({
+                            'x': x,
+                            'distance': distance,
+                            'wall_start': draw_start,
+                            'wall_end': draw_end
+                        })
+                        
+                        # Render Game of Life blood pattern on close walls
+                        if distance < 200 and x % 2 == 0:  # Every other column for performance
+                            if self.shared_game_of_life:
+                                pattern = self.shared_game_of_life.get_pattern()
+                                gol_height = self.shared_game_of_life.height
+                                wall_height = draw_end - draw_start
+                                cell_h = max(1, wall_height / gol_height)
+                                
+                                if cell_h >= 1:
+                                    gol_width = self.shared_game_of_life.width
+                                    pattern_x = int(x / self.width * gol_width)
+                                    
+                                    for y in range(gol_height):
+                                        if pattern[y, pattern_x]:
+                                            screen_y = draw_start + (y * wall_height) / gol_height
+                                            if draw_start <= screen_y < draw_end:
+                                                variation = ((x * 7 + y * 11) % 31) - 15
+                                                blood_red = max(120, min(200, int(139 + (y / gol_height) * 39 + variation)))
+                                                blood_green = max(0, min(60, int((y / gol_height) * 34 + variation // 2)))
+                                                blood_blue = max(0, min(50, int((y / gol_height) * 33 + variation // 3)))
+                                                
+                                                pygame.draw.line(self.screen, (blood_red, blood_green, blood_blue),
+                                                               (x, int(screen_y)), (x, int(screen_y + cell_h)))
                     else:
-                        bx, by, bz, bw, bh, bd = box
-                    # Calculate depth in camera space (negative Z = behind camera)
-                    if len(camera_pos) == 3:
-                        cx, cy, cz = camera_pos
-                    else:
-                        cx, cy = camera_pos
-                        cz = 0.0
-                    
-                    # Transform wall center to camera space
-                    wall_center_x = bx + bw/2 - cx
-                    wall_center_y = by + bd/2 - cy
-                    wall_center_z = bz + bh/2 - cz
-                    
-                    # Rotate by camera yaw and pitch to get depth
-                    yaw_rad = math.radians(camera_yaw)
-                    pitch_rad = math.radians(camera_pitch)
-                    
-                    # Rotate by yaw
-                    rotated_x = wall_center_x * math.cos(yaw_rad) - wall_center_y * math.sin(yaw_rad)
-                    rotated_y = wall_center_x * math.sin(yaw_rad) + wall_center_y * math.cos(yaw_rad)
-                    rotated_z = wall_center_z
-                    
-                    # Rotate by pitch
-                    final_z = rotated_y * math.sin(pitch_rad) + rotated_z * math.cos(pitch_rad)
-                    
-                    # Depth is the Z coordinate in camera space (negative = behind camera)
-                    depth = -final_z
-                    wall_depths.append((depth, box))
+                        ray_results.append({'x': x, 'distance': MAX_DEPTH, 'wall_start': 0, 'wall_end': 0})
                 
-                # Sort by depth (farthest first, so closer walls render on top and occlude farther ones)
-                wall_depths.sort(key=lambda x: x[0], reverse=True)
-                
-                # Limit number of walls rendered for performance (only render closest walls)
-                max_walls_to_render = 100  # Limit to 100 closest walls for better FPS
-                if len(wall_depths) > max_walls_to_render:
-                    wall_depths = wall_depths[:max_walls_to_render]
-                
-                # Limit number of walls rendered for performance (only render closest walls)
-                max_walls_to_render = 200  # Limit to 200 closest walls
-                if len(wall_depths) > max_walls_to_render:
-                    wall_depths = wall_depths[:max_walls_to_render]
+                # Store ray results for sprite rendering
+                self.ray_results = ray_results
                 
                 # Update shared Game of Life (every 10 frames for better performance)
                 self.game_of_life_update_counter += 1
                 if self.game_of_life_update_counter >= 10:
                     self.game_of_life_update_counter = 0
-                    # Update the single shared Game of Life instance
-                    self.shared_game_of_life.update()
-                    # Invalidate cache when pattern changes
+                    if self.shared_game_of_life:
+                        self.shared_game_of_life.update()
                     self.game_of_life_surface_cache = None
                 
-                # Render each wall as a 3D box with random colors and Game of Life
-                for depth, box in wall_depths:
-                    # Skip walls behind camera
-                    if depth < 0:
-                        continue
-                    
-                    if len(box) == 7:
-                        bx, by, bz, bw, bh, bd, wall_color = box
-                    else:
-                        bx, by, bz, bw, bh, bd = box
-                        wall_color = self.WALL_COLOR
-                    
-                    # Get 8 corners of the box
-                    corners = [
-                        (bx, by, bz),  # Bottom front left
-                        (bx + bw, by, bz),  # Bottom front right
-                        (bx + bw, by + bd, bz),  # Bottom back right
-                        (bx, by + bd, bz),  # Bottom back left
-                        (bx, by, bz + bh),  # Top front left
-                        (bx + bw, by, bz + bh),  # Top front right
-                        (bx + bw, by + bd, bz + bh),  # Top back right
-                        (bx, by + bd, bz + bh),  # Top back left
-                    ]
-                    
-                    # Project corners to screen
-                    screen_corners = []
-                    corners_behind_camera = False
-                    for corner in corners:
-                        screen_pos = self.world_to_screen(corner, camera_pos, camera_yaw, camera_pitch, camera_roll, fpv_mode)
-                        screen_corners.append(screen_pos)
-                        # Check if corner is behind camera (would have negative depth)
-                        if len(camera_pos) == 3:
-                            cx, cy, cz = camera_pos
-                        else:
-                            cx, cy = camera_pos
-                            cz = 0.0
-                        corner_rel_x = corner[0] - cx
-                        corner_rel_y = corner[1] - cy
-                        corner_rel_z = corner[2] - cz
-                        # Quick check: if corner is very close to camera, might be behind
-                        corner_dist = math.sqrt(corner_rel_x**2 + corner_rel_y**2 + corner_rel_z**2)
-                        if corner_dist < 10:  # Very close, might be behind
-                            corners_behind_camera = True
-                    
-                    # Skip walls that are entirely behind camera
-                    if corners_behind_camera and depth < 50:
-                        continue
-                    
-                    # Calculate which faces are visible using proper back-face culling
-                    # Determine face visibility based on camera position relative to wall
-                    if len(camera_pos) == 3:
-                        cx, cy, cz = camera_pos
-                    else:
-                        cx, cy = camera_pos
-                        cz = 0.0
-                    
-                    # Calculate face centers and normals for back-face culling
-                    # Front face (facing +Y direction, normal = (0, 1, 0))
-                    front_face = [screen_corners[0], screen_corners[1], screen_corners[5], screen_corners[4]]
-                    front_center = (bx + bw/2, by, bz + bh/2)
-                    front_to_camera = (cx - front_center[0], cy - front_center[1], cz - front_center[2])
-                    front_normal_dot = front_to_camera[1]  # Dot product with (0, 1, 0) normal
-                    front_facing = front_normal_dot < 0  # Face is visible if camera is in front (negative Y)
-                    
-                    # Top face (facing +Z direction, normal = (0, 0, 1))
-                    top_face = [screen_corners[4], screen_corners[5], screen_corners[6], screen_corners[7]]
-                    top_center = (bx + bw/2, by + bd/2, bz + bh)
-                    top_to_camera = (cx - top_center[0], cy - top_center[1], cz - top_center[2])
-                    top_normal_dot = top_to_camera[2]  # Dot product with (0, 0, 1) normal
-                    top_facing = top_normal_dot < 0  # Face is visible if camera is below (negative Z)
-                    
-                    # Right face (facing +X direction, normal = (1, 0, 0))
-                    right_face = [screen_corners[1], screen_corners[2], screen_corners[6], screen_corners[5]]
-                    right_center = (bx + bw, by + bd/2, bz + bh/2)
-                    right_to_camera = (cx - right_center[0], cy - right_center[1], cz - right_center[2])
-                    right_normal_dot = right_to_camera[0]  # Dot product with (1, 0, 0) normal
-                    right_facing = right_normal_dot < 0  # Face is visible if camera is to the left (negative X)
-                    
-                    # Left face (facing -X direction, normal = (-1, 0, 0))
-                    left_face = [screen_corners[3], screen_corners[0], screen_corners[4], screen_corners[7]]
-                    left_center = (bx, by + bd/2, bz + bh/2)
-                    left_to_camera = (cx - left_center[0], cy - left_center[1], cz - left_center[2])
-                    left_normal_dot = -left_to_camera[0]  # Dot product with (-1, 0, 0) normal
-                    left_facing = left_normal_dot < 0  # Face is visible if camera is to the right (positive X)
-                    
-                    # Render all visible faces to make solid cubes
-                    # Draw faces in order: back, bottom, sides, front, top (for proper depth)
-                    # This ensures closer faces render on top
-                    
-                    # Back face (facing -Y direction, normal = (0, -1, 0)) - draw first (farthest)
-                    back_face = [screen_corners[3], screen_corners[2], screen_corners[6], screen_corners[7]]
-                    back_center = (bx + bw/2, by + bd, bz + bh/2)
-                    back_to_camera = (cx - back_center[0], cy - back_center[1], cz - back_center[2])
-                    back_normal_dot = -back_to_camera[1]  # Dot product with (0, -1, 0) normal
-                    back_facing = back_normal_dot < 0  # Face is visible if camera is behind (positive Y)
-                    
-                    if back_facing and self._is_face_visible(back_face):
-                        # Back face - darker shade (solid, fully opaque)
-                        back_color = tuple(max(0, int(c * 0.7)) for c in wall_color)
-                        pygame.draw.polygon(self.screen, back_color, back_face)  # Solid fill
-                        pygame.draw.polygon(self.screen, tuple(max(0, c - 20) for c in back_color), back_face, 1)
-                    
-                    # Bottom face (facing -Z direction, normal = (0, 0, -1))
-                    bottom_face = [screen_corners[0], screen_corners[1], screen_corners[2], screen_corners[3]]
-                    bottom_center = (bx + bw/2, by + bd/2, bz)
-                    bottom_to_camera = (cx - bottom_center[0], cy - bottom_center[1], cz - bottom_center[2])
-                    bottom_normal_dot = -bottom_to_camera[2]  # Dot product with (0, 0, -1) normal
-                    bottom_facing = bottom_normal_dot < 0  # Face is visible if camera is above (positive Z)
-                    
-                    if bottom_facing and self._is_face_visible(bottom_face):
-                        # Bottom face - darkest shade (solid, fully opaque)
-                        bottom_color = tuple(max(0, int(c * 0.6)) for c in wall_color)
-                        pygame.draw.polygon(self.screen, bottom_color, bottom_face)  # Solid fill
-                        pygame.draw.polygon(self.screen, tuple(max(0, c - 20) for c in bottom_color), bottom_face, 1)
-                    
-                    # Right face (facing +X direction) - draw before left
-                    if right_facing and self._is_face_visible(right_face):
-                        # Right face - darker shade (solid, fully opaque)
-                        right_color = tuple(max(0, int(c * 0.8)) for c in wall_color)
-                        pygame.draw.polygon(self.screen, right_color, right_face)  # Solid fill
-                        pygame.draw.polygon(self.screen, tuple(max(0, c - 20) for c in right_color), right_face, 1)
-                    
-                    # Left face (facing -X direction)
-                    if left_facing and self._is_face_visible(left_face):
-                        # Left face - darker shade (solid, fully opaque)
-                        left_color = tuple(max(0, int(c * 0.8)) for c in wall_color)
-                        pygame.draw.polygon(self.screen, left_color, left_face)  # Solid fill
-                        pygame.draw.polygon(self.screen, tuple(max(0, c - 20) for c in left_color), left_face, 1)
-                    
-                    # Front face (facing +Y direction) - draw before top (closer)
-                    if front_facing and self._is_face_visible(front_face):
-                        # Front face - use base color (solid, fully opaque)
-                        pygame.draw.polygon(self.screen, wall_color, front_face)  # Solid fill
-                        
-                        # Render shared Game of Life pattern on front face (only if face is large enough and close)
-                        face_width = abs(screen_corners[1][0] - screen_corners[0][0])
-                        face_height = abs(screen_corners[4][1] - screen_corners[0][1])
-                        # Only render on larger, closer faces for performance
-                        if face_width > 40 and face_height > 40 and depth < 400:  # Only close, large faces
-                            self._render_game_of_life_on_face(
-                                front_face, self.shared_game_of_life, wall_color
-                            )
-                        
-                        border_color = tuple(max(0, c - 30) for c in wall_color)
-                        pygame.draw.polygon(self.screen, border_color, front_face, 1)
-                    
-                    # Top face (facing +Z direction) - draw last (closest/closest to camera)
-                    if top_facing and self._is_face_visible(top_face):
-                        # Top face - lighter shade (solid, fully opaque)
-                        top_color = tuple(min(255, int(c * 1.2)) for c in wall_color)
-                        pygame.draw.polygon(self.screen, top_color, top_face)  # Solid fill
-                        pygame.draw.polygon(self.screen, tuple(max(0, c - 20) for c in top_color), top_face, 1)
+                # Raycasting complete - old polygon rendering removed
             else:
                 # Original 2D wall rendering
                 wall_rects = self.maze.get_wall_rects(camera_pos, self.width, self.height)
@@ -2523,69 +2500,142 @@ class PygameRenderer:
                 if 0 <= screen_y <= self.height:
                     pygame.draw.line(self.screen, (20, 20, 20), (0, screen_y), (self.width, screen_y))
         
-        # Sort entities by Z (back to front) for proper 3D rendering
-        sorted_entities = sorted(entities, key=lambda e: e.position[2] if len(e.position) == 3 else 0.0)
-        
-        # Draw entities (3D with perspective)
-        for entity in sorted_entities:
-            screen_pos = self.world_to_screen(entity.position, camera_pos, camera_yaw, camera_pitch, camera_roll, fpv_mode)
+        # Draw entities as Doom-style sprites (billboards)
+        if fpv_mode:
+            # Don't render player in FPV mode
+            entities_to_render = [e for e in entities if e.id != 'player']
             
-            # Only draw if on screen
-            if 0 <= screen_pos[0] <= self.width and 0 <= screen_pos[1] <= self.height:
-                # Choose color and size based on entity type
-                if entity.id == 'player':
-                    color = self.BLUE
-                    base_radius = 15
-                elif 'npc' in entity.id:
-                    color = self.RED
-                    base_radius = 10
-                else:
-                    color = self.GREEN
-                    base_radius = 8
+            # Calculate sprite positions and distances
+            import math
+            sprites = []
+            for entity in entities_to_render:
+                if not entity or len(entity.position) < 2:
+                    continue
                 
-                # Apply perspective scaling based on Z position
-                if len(entity.position) == 3:
-                    ez = entity.position[2]
-                else:
-                    ez = 0.0
+                # Extract positions
+                ex, ey = entity.position[0], entity.position[1]
+                ez = entity.position[2] if len(entity.position) == 3 else 0.0
+                
                 if len(camera_pos) == 3:
-                    cz = camera_pos[2]
+                    cx, cy, cz = camera_pos
                 else:
+                    cx, cy = camera_pos
                     cz = 0.0
-                rel_z = ez - cz
-                perspective_scale = 1.0 / (1.0 + abs(rel_z) * 0.001)
-                radius = int(base_radius * perspective_scale)
                 
-                # Draw shadow on ground (if entity is above ground)
-                if len(entity.position) == 3 and entity.position[2] > 5:
-                    shadow_pos = self.world_to_screen((entity.position[0], entity.position[1], 0.0), camera_pos, camera_yaw, camera_pitch, camera_roll, fpv_mode)
-                    shadow_alpha = max(0, min(255, int(100 * (1.0 - entity.position[2] / 200.0))))
-                    shadow_surface = pygame.Surface((radius * 2, radius), pygame.SRCALPHA)
-                    pygame.draw.ellipse(shadow_surface, (0, 0, 0, shadow_alpha), (0, 0, radius * 2, radius))
-                    self.screen.blit(shadow_surface, (shadow_pos[0] - radius, shadow_pos[1] - radius // 2))
+                dx = ex - cx
+                dy = ey - cy
+                dz = ez - cz
                 
-                # Draw entity circle
-                pygame.draw.circle(self.screen, color, screen_pos, radius)
-                pygame.draw.circle(self.screen, self.WHITE, screen_pos, radius, 2)
+                # Transform to camera space
+                yaw_rad = math.radians(camera_yaw)
+                pitch_rad = math.radians(camera_pitch)
                 
-                # Draw entity ID label
-                label = self.small_font.render(entity.id, True, self.WHITE)
-                label_rect = label.get_rect(center=(screen_pos[0], screen_pos[1] - radius - 15))
-                self.screen.blit(label, label_rect)
+                # Rotate by yaw
+                temp_x = dx * math.cos(yaw_rad) - dy * math.sin(yaw_rad)
+                temp_y = dx * math.sin(yaw_rad) + dy * math.cos(yaw_rad)
+                temp_z = dz
                 
-                # Draw health bar for entities with health
-                if entity.health < 100:
-                    bar_width = int(30 * perspective_scale)
-                    bar_height = 4
-                    bar_x = screen_pos[0] - bar_width // 2
-                    bar_y = screen_pos[1] + radius + 5
+                # Rotate by pitch
+                final_y = temp_y * math.cos(pitch_rad) - temp_z * math.sin(pitch_rad)
+                final_z = temp_y * math.sin(pitch_rad) + temp_z * math.cos(pitch_rad)
+                
+                # Project to screen
+                FOV = 60.0
+                fov_scale = 1.0 / math.tan(math.radians(FOV / 2.0))
+                depth = max(0.1, -temp_x)
+                
+                if depth <= 0 or temp_x < 0:
+                    continue  # Behind camera
+                
+                screen_x = self.width / 2 + temp_y * fov_scale * (self.height / depth)
+                screen_y = self.height / 2 - final_y * fov_scale * (self.height / depth)
+                distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+                
+                sprites.append({
+                    'entity': entity,
+                    'screen_x': screen_x,
+                    'screen_y': screen_y,
+                    'distance': distance,
+                    'depth': depth
+                })
+            
+            # Sort by distance (farthest first for proper depth)
+            sprites.sort(key=lambda s: s['distance'], reverse=True)
+            
+            # Render sprites
+            for sprite in sprites:
+                entity = sprite['entity']
+                is_player = entity.id == 'player'
+                color = self.BLUE if is_player else (self.RED if 'npc' in entity.id else self.GREEN)
+                base_radius = 15 if is_player else (10 if 'npc' in entity.id else 8)
+                
+                # Calculate sprite size based on distance
+                sprite_size = max(5, min(50, base_radius * 2 * (self.height / sprite['depth'])))
+                sprite_x = sprite['screen_x'] - sprite_size / 2
+                sprite_y = sprite['screen_y'] - sprite_size / 2
+                
+                # Check if sprite is on screen
+                if sprite_x + sprite_size < 0 or sprite_x > self.width or \
+                   sprite_y + sprite_size < 0 or sprite_y > self.height:
+                    continue
+                
+                # Check if sprite is behind a wall (simple depth check)
+                screen_x_int = int(sprite['screen_x'])
+                if 0 <= screen_x_int < self.width and hasattr(self, 'ray_results'):
+                    ray = next((r for r in self.ray_results if r['x'] == screen_x_int), None)
+                    if ray and sprite['distance'] > ray['distance']:
+                        continue  # Behind wall
+                
+                # Brightness based on distance
+                brightness = max(0.5, min(1.0, 1.0 - sprite['distance'] / 500.0))
+                
+                # Draw sprite as circle (Doom-style)
+                alpha = int(255 * brightness)
+                sprite_surface = pygame.Surface((int(sprite_size * 2), int(sprite_size * 2)), pygame.SRCALPHA)
+                
+                # Draw glow
+                pygame.draw.circle(sprite_surface, (*color, alpha // 2), 
+                                 (int(sprite_size), int(sprite_size)), int(sprite_size))
+                
+                # Draw sprite body
+                pygame.draw.circle(sprite_surface, (*color, alpha), 
+                                 (int(sprite_size), int(sprite_size)), int(sprite_size // 2))
+                pygame.draw.circle(sprite_surface, (255, 255, 255, alpha), 
+                                 (int(sprite_size), int(sprite_size)), int(sprite_size // 2), 2)
+                
+                self.screen.blit(sprite_surface, (int(sprite_x), int(sprite_y)))
+        else:
+            # 2D fallback rendering
+            sorted_entities = sorted(entities, key=lambda e: e.position[2] if len(e.position) == 3 else 0.0)
+            
+            for entity in sorted_entities:
+                screen_pos = self.world_to_screen(entity.position, camera_pos, camera_yaw, camera_pitch, camera_roll, fpv_mode)
+                
+                if 0 <= screen_pos[0] <= self.width and 0 <= screen_pos[1] <= self.height:
+                    if entity.id == 'player':
+                        color = self.BLUE
+                        base_radius = 15
+                    elif 'npc' in entity.id:
+                        color = self.RED
+                        base_radius = 10
+                    else:
+                        color = self.GREEN
+                        base_radius = 8
                     
-                    # Background
-                    pygame.draw.rect(self.screen, (50, 50, 50), (bar_x, bar_y, bar_width, bar_height))
-                    # Health
-                    health_width = int(bar_width * (entity.health / 100.0))
-                    health_color = self.GREEN if entity.health > 50 else self.YELLOW if entity.health > 25 else self.RED
-                    pygame.draw.rect(self.screen, health_color, (bar_x, bar_y, health_width, bar_height))
+                    if len(entity.position) == 3:
+                        ez = entity.position[2]
+                    else:
+                        ez = 0.0
+                    if len(camera_pos) == 3:
+                        cz = camera_pos[2]
+                    else:
+                        cz = 0.0
+                    rel_z = ez - cz
+                    perspective_scale = 1.0 / (1.0 + abs(rel_z) * 0.001)
+                    radius = int(base_radius * perspective_scale)
+                    
+                    pygame.draw.circle(self.screen, color, screen_pos, radius)
+                    pygame.draw.circle(self.screen, self.WHITE, screen_pos, radius, 2)
         
         # Draw UI overlay
         self._draw_ui(camera_pos, frame_count, fps, len(entities), camera_yaw, camera_pitch, fpv_mode)
@@ -2701,6 +2751,9 @@ class PygameRenderer:
                         pygame.event.set_grab(False)
                         self.mouse_captured = False
                     keys_pressed['esc'] = True
+                elif event.key == pygame.K_F11:
+                    # Toggle fullscreen with F11
+                    self.toggle_fullscreen()
         
         # Check for held keys using pygame.key.get_pressed() - this is the reliable way
         keys = pygame.key.get_pressed()
@@ -3010,6 +3063,7 @@ def main():
     print("Controls: W/A/S/D to move, SPACE to jump, Mouse to look around (6DOF)")
     print("Mouse is captured in FPV mode - ESC releases capture, click to recapture")
     print("6DOF Camera: Mouse for yaw/pitch (unlimited 360°), Q/E for roll")
+    print("F11: Toggle fullscreen mode")
     print("NPCs will automatically move towards the player")
     print("Navigate through the maze - avoid walls!")
     print("Sound effects: footsteps and collisions")

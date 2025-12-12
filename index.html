@@ -267,7 +267,8 @@
                 <div class="key" id="keyD">D</div>
             </div>
             <p style="margin-top: 10px; font-size: 11px; color: #00d4ff; text-align: center;">
-                Move mouse/touch to control player
+                WASD to move, SPACE to jump, Click canvas to enable 3D mouse look (6DOF), Q/E for roll<br>
+                F11 for fullscreen
             </p>
         </div>
     </div>
@@ -282,25 +283,39 @@
         const PLAYER_RADIUS = 12;
         const NPC_RADIUS = 8;
 
-        // Game State
+        // Game Constants - 3D
+        const GRAVITY = 32.2 * 30; // 966 units/s² (realistic for 10-foot room)
+        const GROUND_LEVEL = 0.0;
+        const CEILING_LEVEL = 300.0; // 10 feet = 300 units
+        const CAMERA_HEIGHT = 150.0; // 5 feet eye level
+        const JUMP_FORCE = 637.0; // Jump to 7 feet (210 units)
+        
+        // Game State - 3D
         const game = {
             canvas: null,
             ctx: null,
             player: null,
             entities: [],
             maze: null,
-            camera: { x: 0, y: 0 },
-            cameraTarget: { x: 0, y: 0 },
+            camera: { x: 0, y: 0, z: 0 },
+            cameraTarget: { x: 0, y: 0, z: 0 },
+            cameraYaw: 0.0, // Horizontal rotation
+            cameraPitch: 0.0, // Vertical rotation
+            cameraRoll: 0.0, // Roll rotation (6DOF)
+            fpvMode: true, // First-person view
+            mouseCaptured: false,
             keys: {},
-            mouse: { x: 0, y: 0, worldX: 0, worldY: 0, active: false },
+            mouse: { x: 0, y: 0, worldX: 0, worldY: 0, active: false, dx: 0, dy: 0 },
             touch: { x: 0, y: 0, worldX: 0, worldY: 0, active: false, touchId: null },
             frame: 0,
             lastTime: 0,
             fps: 60,
             fpsCounter: 0,
             fpsTimer: 0,
-            motionTrails: new Map(), // Store motion trails for entities
-            particles: [] // Particle effects
+            motionTrails: new Map(),
+            particles: [],
+            gameOfLife: null, // Shared Game of Life instance
+            gameOfLifeUpdateCounter: 0
         };
 
         // Sound Manager
@@ -772,28 +787,182 @@
 
                 return rects;
             }
+            
+            getWallBoxes3D(camera, viewDistance, wallHeight) {
+                const cameraX = camera.x || 0;
+                const cameraY = camera.y || 0;
+                this.ensureChunksLoaded(cameraX, cameraY);
+                const boxes = [];
+                const searchRadius = Math.floor(viewDistance / CELL_SIZE) + 2;
+                const centerCellX = Math.floor(cameraX / CELL_SIZE);
+                const centerCellY = Math.floor(cameraY / CELL_SIZE);
+                
+                // Generate deterministic color for each wall
+                const hashCode = (str) => {
+                    let hash = 0;
+                    for (let i = 0; i < str.length; i++) {
+                        const char = str.charCodeAt(i);
+                        hash = ((hash << 5) - hash) + char;
+                        hash = hash & hash;
+                    }
+                    return Math.abs(hash);
+                };
+                
+                for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+                    for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+                        const cellX = centerCellX + dx;
+                        const cellY = centerCellY + dy;
+                        
+                        const [chunkX, chunkY] = this.getChunkCoords(cellX * CELL_SIZE, cellY * CELL_SIZE);
+                        const chunk = this.getOrCreateChunk(chunkX, chunkY);
+                        
+                        const localX = ((cellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        const localY = ((cellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        
+                        if (chunk.walls.has(`${localX},${localY}`)) {
+                            const worldX = cellX * CELL_SIZE;
+                            const worldY = cellY * CELL_SIZE;
+                            const worldZ = 0.0;
+                            
+                            // Doom-style colors
+                            const seed = hashCode(`${cellX}_${cellY}`);
+                            const rng = (seed * 9301 + 49297) % 233280 / 233280;
+                            const baseR = Math.floor(30 + rng * 50);
+                            const baseG = Math.floor(25 + rng * 35);
+                            const baseB = Math.floor(20 + rng * 30);
+                            
+                            boxes.push({
+                                x: worldX,
+                                y: worldY,
+                                z: worldZ,
+                                w: CELL_SIZE,
+                                h: wallHeight,
+                                d: CELL_SIZE,
+                                color: [baseR, baseG, baseB]
+                            });
+                        }
+                    }
+                }
+                
+                return boxes;
+            }
+        }
+
+        // Game of Life class for blood pattern
+        class GameOfLife {
+            constructor(seed = null) {
+                this.width = 100;
+                this.height = 100;
+                this.grid = Array(this.height).fill(null).map(() => Array(this.width).fill(false));
+                this.frameCount = 0;
+                
+                // Initialize with blood-dripping pattern
+                const rng = seed !== null ? this.seededRandom(seed) : Math.random;
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        const topProb = 0.4;
+                        const bottomProb = 0.1;
+                        const prob = topProb - (topProb - bottomProb) * (y / this.height);
+                        if (typeof rng === 'function' && rng() < prob) {
+                            this.grid[y][x] = true;
+                        } else if (typeof rng === 'number' && Math.random() < prob) {
+                            this.grid[y][x] = true;
+                        }
+                    }
+                }
+            }
+            
+            seededRandom(seed) {
+                let value = seed;
+                return () => {
+                    value = (value * 9301 + 49297) % 233280;
+                    return value / 233280;
+                };
+            }
+            
+            update() {
+                // Conway's Game of Life rules with gravity effect
+                const newGrid = Array(this.height).fill(null).map(() => Array(this.width).fill(false));
+                
+                // Count neighbors
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        let neighbors = 0;
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dx = -1; dx <= 1; dx++) {
+                                if (dx === 0 && dy === 0) continue;
+                                const ny = (y + dy + this.height) % this.height;
+                                const nx = (x + dx + this.width) % this.width;
+                                if (this.grid[ny][nx]) neighbors++;
+                            }
+                        }
+                        
+                        // Apply rules
+                        if (this.grid[y][x]) {
+                            newGrid[y][x] = neighbors === 2 || neighbors === 3;
+                        } else {
+                            newGrid[y][x] = neighbors === 3;
+                        }
+                    }
+                }
+                
+                // Gravity effect (blood dripping)
+                this.frameCount++;
+                for (let y = this.height - 2; y >= 0; y--) {
+                    for (let x = 0; x < this.width; x++) {
+                        if (newGrid[y][x] && !newGrid[y + 1][x]) {
+                            const shouldFall = ((x * 7 + y * 11 + this.frameCount) % 10) < 1;
+                            if (shouldFall) {
+                                newGrid[y][x] = false;
+                                newGrid[y + 1][x] = true;
+                            }
+                        }
+                    }
+                }
+                
+                this.grid = newGrid;
+            }
+            
+            getPattern() {
+                return this.grid;
+            }
         }
 
         // Initialize Game
         function init() {
             game.canvas = document.getElementById('gameCanvas');
             game.ctx = game.canvas.getContext('2d');
+            
+            // Set canvas to fullscreen size initially
+            const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+            if (isFullscreen || window.innerWidth > 800) {
+                game.canvas.width = window.innerWidth;
+                game.canvas.height = window.innerHeight;
+            }
+            
             game.maze = new InfiniteMaze();
 
-            // Create player
+            // Create player - 3D
             game.player = {
                 id: 'player',
                 x: 0,
                 y: 0,
+                z: 0, // 3D position
                 vx: 0,
                 vy: 0,
+                vz: 0, // 3D velocity
                 health: 100,
                 radius: PLAYER_RADIUS,
                 lastX: 0,
                 lastY: 0,
                 trail: [],
-                initialized: false
+                initialized: false,
+                onGround: true,
+                affectedByGravity: true
             };
+            
+            // Initialize Game of Life for blood pattern
+            game.gameOfLife = new GameOfLife(42); // Shared instance
 
             // Find valid starting position (center of a path cell) - RANDOM
             let startFound = false;
@@ -833,6 +1002,7 @@
                 const selectedPos = validPositions[randomIndex];
                 game.player.x = selectedPos.x;
                 game.player.y = selectedPos.y;
+                game.player.z = 0; // Start at ground level
                 startFound = true;
             }
             
@@ -871,41 +1041,86 @@
                     if (!game.maze.checkCollision(randomX, randomY, PLAYER_RADIUS + 10)) {
                         game.player.x = randomX;
                         game.player.y = randomY;
+                        game.player.z = 0;
                         safeFound = true;
                     }
                 }
                 if (!safeFound) {
                     game.player.x = CELL_SIZE / 2;
                     game.player.y = CELL_SIZE / 2;
+                    game.player.z = 0;
                 }
             }
 
             game.entities.push(game.player);
 
             // Create NPCs at valid positions - OPTIMIZED for many NPCs
+            // Use cell-based positioning like Python version to ensure NPCs are on valid path cells
             let npcCount = 0;
-            const MAX_NPCS = 50; // Increased from 5 to 50
-            for (let i = 0; i < 100 && npcCount < MAX_NPCS; i++) {
-                const npcX = game.player.x + (i + 1) * 3 * CELL_SIZE;
-                const npcY = game.player.y + (i % 2 === 0 ? 1 : -1) * CELL_SIZE;
+            const MAX_NPCS = 25; // Reduced from 50 to 25 for better FPS with Game of Life rendering
+            const startCellX = Math.floor(game.player.x / CELL_SIZE);
+            const startCellY = Math.floor(game.player.y / CELL_SIZE);
+            
+            for (let i = 0; i < MAX_NPCS; i++) {
+                // Find a nearby path cell for NPC (like Python version)
+                const npcOffset = (i + 1) * 3; // Space NPCs out
+                let npcCellX = startCellX + npcOffset;
+                let npcCellY = startCellY;
+                
+                // Ensure chunk is loaded
+                const npcWorldTemp = game.maze.cellToWorld(npcCellX, npcCellY);
+                game.maze.ensureChunksLoaded(npcWorldTemp.x, npcWorldTemp.y);
+                
+                // Verify it's a path, if not find nearby
+                const [chunkX, chunkY] = game.maze.getChunkCoords(npcCellX * CELL_SIZE, npcCellY * CELL_SIZE);
+                const chunk = game.maze.getOrCreateChunk(chunkX, chunkY);
+                let localX = ((npcCellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                let localY = ((npcCellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                
+                if (!chunk.paths.has(`${localX},${localY}`)) {
+                    // Try nearby cells
+                    let found = false;
+                    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                        const testCellX = npcCellX + dx;
+                        const testCellY = npcCellY + dy;
+                        const [testChunkX, testChunkY] = game.maze.getChunkCoords(testCellX * CELL_SIZE, testCellY * CELL_SIZE);
+                        const testChunk = game.maze.getOrCreateChunk(testChunkX, testChunkY);
+                        const testLocalX = ((testCellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        const testLocalY = ((testCellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        
+                        if (testChunk.paths.has(`${testLocalX},${testLocalY}`)) {
+                            npcCellX = testCellX;
+                            npcCellY = testCellY;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) continue; // Skip this NPC if no valid path cell found
+                }
+                
+                const npcWorld = game.maze.cellToWorld(npcCellX, npcCellY);
                 
                 // Only add NPC if position is valid (not in wall)
-                if (!game.maze.checkCollision(npcX, npcY, NPC_RADIUS)) {
+                if (!game.maze.checkCollision(npcWorld.x, npcWorld.y, NPC_RADIUS)) {
                     game.entities.push({
                         id: `npc_${npcCount}`,
-                        x: npcX,
-                        y: npcY,
+                        x: npcWorld.x,
+                        y: npcWorld.y,
+                        z: 0, // 3D position (Z starts at ground)
                         vx: 0,
                         vy: 0,
+                        vz: 0, // 3D velocity
                         health: 50,
                         radius: NPC_RADIUS,
-                        lastX: npcX,
-                        lastY: npcY,
+                        lastX: npcWorld.x,
+                        lastY: npcWorld.y,
                         trail: [],
                         initialized: true,
-                        path: null,  // Pathfinding path
-                        pathIndex: 0,  // Current waypoint index
-                        lastPathUpdate: 0  // Last time path was calculated
+                        path: null,
+                        pathIndex: 0,
+                        lastPathUpdate: 0,
+                        onGround: true,
+                        affectedByGravity: true
                     });
                     npcCount++;
                 }
@@ -913,34 +1128,210 @@
 
             game.camera.x = game.player.x;
             game.camera.y = game.player.y;
+            game.camera.z = game.player.z + CAMERA_HEIGHT;
             game.cameraTarget.x = game.player.x;
             game.cameraTarget.y = game.player.y;
+            game.cameraTarget.z = game.player.z + CAMERA_HEIGHT;
+            
+            // Set initial camera yaw to look at a wall (180 degrees rotated)
+            // (startCellX and startCellY are already declared above in NPC creation section)
+            const playerX = game.player.x;
+            const playerY = game.player.y;
+            
+            // Find nearest wall (search in 4 cardinal directions, up to 5 cells away)
+            let nearestWall = null;
+            let nearestDist = Infinity;
+            for (let dx = -5; dx <= 5; dx++) {
+                for (let dy = -5; dy <= 5; dy++) {
+                    if (dx === 0 && dy === 0) continue; // Skip the player's own cell
+                    
+                    const testCellX = startCellX + dx;
+                    const testCellY = startCellY + dy;
+                    const testWorld = game.maze.cellToWorld(testCellX, testCellY);
+                    const [chunkX, chunkY] = game.maze.getChunkCoords(testWorld.x, testWorld.y);
+                    const chunk = game.maze.getOrCreateChunk(chunkX, chunkY);
+                    const localX = ((testCellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                    const localY = ((testCellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                    
+                    if (chunk.walls.has(`${localX},${localY}`)) {
+                        // Calculate distance to wall center (like Python version)
+                        const wallWorldX = testWorld.x;
+                        const wallWorldY = testWorld.y;
+                        const wallCenterX = wallWorldX + CELL_SIZE / 2;
+                        const wallCenterY = wallWorldY + CELL_SIZE / 2;
+                        const dist = Math.sqrt((wallCenterX - playerX)**2 + (wallCenterY - playerY)**2);
+                        
+                        if (dist < nearestDist) {
+                            nearestDist = dist;
+                            nearestWall = { x: wallCenterX, y: wallCenterY };
+                        }
+                    }
+                }
+            }
+            
+            // Set camera yaw to look at the nearest wall
+            if (nearestWall) {
+                const wallX = nearestWall.x;
+                const wallY = nearestWall.y;
+                // Calculate angle from player to wall (in degrees)
+                const dx = wallX - playerX;
+                const dy = wallY - playerY;
+                const angleRad = Math.atan2(dy, dx); // atan2 gives angle in radians (0 = +X, 90 = +Y)
+                const angleDeg = angleRad * 180 / Math.PI;
+                // Convert to camera yaw system:
+                // Camera forward: forward_x = sin(yaw), forward_y = -cos(yaw)
+                // So yaw = 0 means looking along -Y (up), yaw = 90 means looking along +X (right)
+                // To convert from atan2 angle (0 = +X, 90 = +Y) to camera yaw:
+                // We need: atan2 angle + 90 = camera yaw (because camera yaw 0 = -Y, which is atan2 -90)
+                let cameraYaw = angleDeg + 90.0;
+                // Rotate by 180 degrees
+                cameraYaw += 180.0;
+                // Normalize to 0-360 range
+                cameraYaw = cameraYaw % 360.0;
+                game.cameraYaw = cameraYaw;
+            } else {
+                // Fallback: look in a random direction, rotated by 180 degrees
+                game.cameraYaw = (Math.random() * 360 + 180.0) % 360.0;
+            }
+
+            // Fullscreen functionality
+            function toggleFullscreen() {
+                if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.mozFullScreenElement && !document.msFullscreenElement) {
+                    // Enter fullscreen
+                    const element = document.documentElement;
+                    if (element.requestFullscreen) {
+                        element.requestFullscreen();
+                    } else if (element.webkitRequestFullscreen) {
+                        element.webkitRequestFullscreen();
+                    } else if (element.mozRequestFullScreen) {
+                        element.mozRequestFullScreen();
+                    } else if (element.msRequestFullscreen) {
+                        element.msRequestFullscreen();
+                    }
+                } else {
+                    // Exit fullscreen
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    } else if (document.mozCancelFullScreen) {
+                        document.mozCancelFullScreen();
+                    } else if (document.msExitFullscreen) {
+                        document.msExitFullscreen();
+                    }
+                }
+            }
+            
+            // Handle fullscreen changes and resize canvas
+            function handleFullscreenChange() {
+                const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+                if (isFullscreen) {
+                    game.canvas.width = window.innerWidth;
+                    game.canvas.height = window.innerHeight;
+                } else {
+                    game.canvas.width = 800;
+                    game.canvas.height = 600;
+                }
+            }
+            
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+            document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+            
+            // Resize canvas on window resize
+            window.addEventListener('resize', () => {
+                const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+                if (isFullscreen) {
+                    game.canvas.width = window.innerWidth;
+                    game.canvas.height = window.innerHeight;
+                }
+            });
 
             // Input handling - Keyboard
             document.addEventListener('keydown', (e) => {
-                game.keys[e.key.toLowerCase()] = true;
+                const key = e.key.toLowerCase();
+                if (key === ' ') {
+                    game.keys[' '] = true; // Space bar for jumping
+                } else if (key === 'f11') {
+                    e.preventDefault(); // Prevent browser's default F11 behavior
+                    toggleFullscreen();
+                } else {
+                    game.keys[key] = true;
+                }
                 updateKeyDisplay();
             });
 
             document.addEventListener('keyup', (e) => {
-                game.keys[e.key.toLowerCase()] = false;
+                const key = e.key.toLowerCase();
+                if (key === ' ') {
+                    game.keys[' '] = false;
+                } else {
+                    game.keys[key] = false;
+                }
                 updateKeyDisplay();
             });
 
-            // Input handling - Mouse
+            // Input handling - Mouse (with capture for FPV)
             game.canvas.addEventListener('mousemove', (e) => {
                 const rect = game.canvas.getBoundingClientRect();
                 game.mouse.x = e.clientX - rect.left;
                 game.mouse.y = e.clientY - rect.top;
+                
+                // Use movementX/movementY from pointer lock for accurate delta
+                if (game.mouseCaptured && (e.movementX !== undefined || e.mozMovementX !== undefined)) {
+                    game.mouse.dx = e.movementX || e.mozMovementX || 0;
+                    game.mouse.dy = e.movementY || e.mozMovementY || 0;
+                } else if (!game.mouseCaptured) {
+                    // Calculate mouse delta for camera rotation when not captured
+                    const centerX = game.canvas.width / 2;
+                    const centerY = game.canvas.height / 2;
+                    game.mouse.dx = game.mouse.x - centerX;
+                    game.mouse.dy = game.mouse.y - centerY;
+                }
                 
                 // Convert screen coordinates to world coordinates
                 game.mouse.worldX = game.camera.x + (game.mouse.x - game.canvas.width / 2);
                 game.mouse.worldY = game.camera.y + (game.mouse.y - game.canvas.height / 2);
                 game.mouse.active = true;
             });
+            
+            // Pointer lock change handler
+            document.addEventListener('pointerlockchange', () => {
+                game.mouseCaptured = document.pointerLockElement === game.canvas;
+            });
+            
+            document.addEventListener('mozpointerlockchange', () => {
+                game.mouseCaptured = document.mozPointerLockElement === game.canvas;
+            });
+            
+            document.addEventListener('webkitpointerlockchange', () => {
+                game.mouseCaptured = document.webkitPointerLockElement === game.canvas;
+            });
 
             game.canvas.addEventListener('mousedown', (e) => {
                 game.mouse.active = true;
+                // Capture mouse for FPV
+                if (game.fpvMode && !game.mouseCaptured) {
+                    game.canvas.requestPointerLock = game.canvas.requestPointerLock || 
+                        game.canvas.mozRequestPointerLock || 
+                        game.canvas.webkitRequestPointerLock;
+                    if (game.canvas.requestPointerLock) {
+                        game.canvas.requestPointerLock();
+                    }
+                }
+            });
+            
+            // ESC to release mouse
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && game.mouseCaptured) {
+                    document.exitPointerLock = document.exitPointerLock || 
+                        document.mozExitPointerLock || 
+                        document.webkitExitPointerLock;
+                    if (document.exitPointerLock) {
+                        document.exitPointerLock();
+                    }
+                }
             });
 
             game.canvas.addEventListener('mouseup', (e) => {
@@ -1033,6 +1424,19 @@
         }
 
         function update(deltaTime) {
+            // Update camera rotation from mouse (6DOF)
+            if (game.fpvMode && game.mouseCaptured) {
+                game.cameraYaw += game.mouse.dx * 0.1;
+                game.cameraPitch += game.mouse.dy * 0.1;
+                game.cameraYaw = game.cameraYaw % 360;
+                game.cameraPitch = game.cameraPitch % 360;
+            }
+            
+            // Roll control with Q/E
+            if (game.keys['q']) game.cameraRoll -= 2.0;
+            if (game.keys['e']) game.cameraRoll += 2.0;
+            game.cameraRoll = game.cameraRoll % 360;
+            
             // Update mouse world coordinates based on current camera position
             if (game.mouse.active) {
                 game.mouse.worldX = game.camera.x + (game.mouse.x - game.canvas.width / 2);
@@ -1045,12 +1449,33 @@
                 game.touch.worldY = game.camera.y + (game.touch.y - game.canvas.height / 2);
             }
 
-            // Player input - Keyboard
+            // Player input - 3D movement based on camera direction
             let vx = 0, vy = 0;
-            if (game.keys['w']) vy -= PLAYER_SPEED;
-            if (game.keys['s']) vy += PLAYER_SPEED;
-            if (game.keys['a']) vx -= PLAYER_SPEED;
-            if (game.keys['d']) vx += PLAYER_SPEED;
+            const yawRad = game.cameraYaw * Math.PI / 180;
+            const forwardX = Math.sin(yawRad);
+            const forwardY = -Math.cos(yawRad);
+            const rightX = Math.cos(yawRad);
+            const rightY = Math.sin(yawRad);
+            
+            let moveForward = 0, moveRight = 0;
+            if (game.keys['w']) moveForward += 1;
+            if (game.keys['s']) moveForward -= 1;
+            if (game.keys['a']) moveRight -= 1;
+            if (game.keys['d']) moveRight += 1;
+            
+            if (moveForward !== 0 || moveRight !== 0) {
+                const mag = Math.sqrt(moveForward * moveForward + moveRight * moveRight);
+                if (mag > 0) {
+                    moveForward /= mag;
+                    moveRight /= mag;
+                    if (Math.abs(moveForward) > 0.1 && Math.abs(moveRight) > 0.1) {
+                        moveForward *= 0.707;
+                        moveRight *= 0.707;
+                    }
+                }
+                vx = (forwardX * moveForward + rightX * moveRight) * PLAYER_SPEED;
+                vy = (forwardY * moveForward + rightY * moveRight) * PLAYER_SPEED;
+            }
 
             // Player input - Touch (for tablets/phones, highest priority)
             if (game.touch.active) {
@@ -1085,6 +1510,43 @@
                 vy *= 0.707;
             }
 
+            // Apply gravity and jumping (3D physics)
+            if (game.player.affectedByGravity) {
+                game.player.vz -= GRAVITY * deltaTime; // Gravity pulls down
+            }
+            
+            // Jumping with space bar
+            if (game.keys[' '] && game.player.onGround) {
+                game.player.vz = JUMP_FORCE;
+                game.player.onGround = false;
+                soundManager.playMoveStart();
+            }
+            
+            // Update Z position (vertical)
+            let newZ = game.player.z + game.player.vz * deltaTime;
+            
+            // Ground collision
+            if (newZ < GROUND_LEVEL) {
+                newZ = GROUND_LEVEL;
+                if (game.player.vz < 0) {
+                    game.player.vz = 0;
+                }
+                game.player.onGround = true;
+            } else {
+                game.player.onGround = false;
+            }
+            
+            // Ceiling collision
+            if (newZ > CEILING_LEVEL) {
+                newZ = CEILING_LEVEL;
+                if (game.player.vz > 0) {
+                    game.player.vz = 0;
+                }
+                game.player.onGround = false;
+            }
+            
+            game.player.z = newZ;
+            
             const wasMoving = Math.abs(game.player.vx) > 0.1 || Math.abs(game.player.vy) > 0.1;
             game.player.vx = vx;
             game.player.vy = vy;
@@ -1097,7 +1559,7 @@
                 soundManager.playFootstep();
             }
 
-            // Update player position with better collision handling
+            // Update player position with better collision handling (X/Y only, Z handled above)
             const newX = game.player.x + game.player.vx * deltaTime;
             const newY = game.player.y + game.player.vy * deltaTime;
 
@@ -1247,6 +1709,26 @@
                             entity.vx = vx;
                             entity.vy = vy;
                             
+                            // Apply gravity to NPCs
+                            if (entity.affectedByGravity) {
+                                entity.vz = (entity.vz || 0) - GRAVITY * deltaTime;
+                            }
+                            
+                            // Update Z position
+                            let newZ = (entity.z || 0) + (entity.vz || 0) * deltaTime;
+                            if (newZ < GROUND_LEVEL) {
+                                newZ = GROUND_LEVEL;
+                                entity.vz = 0;
+                                entity.onGround = true;
+                            } else {
+                                entity.onGround = false;
+                            }
+                            if (newZ > CEILING_LEVEL) {
+                                newZ = CEILING_LEVEL;
+                                entity.vz = 0;
+                            }
+                            entity.z = newZ;
+                            
                             // Update position
                             let newX = entity.x + vx * deltaTime;
                             let newY = entity.y + vy * deltaTime;
@@ -1322,12 +1804,23 @@
                 entity.lastY = entity.y;
             });
 
-            // Update camera with smoother interpolation
+            // Update camera with smoother interpolation (3D)
             game.cameraTarget.x = game.player.x;
             game.cameraTarget.y = game.player.y;
-            const cameraLerp = 0.15; // Smoother camera following
+            game.cameraTarget.z = game.player.z + CAMERA_HEIGHT; // Eye level in FPV
+            const cameraLerp = 0.15;
             game.camera.x += (game.cameraTarget.x - game.camera.x) * cameraLerp;
             game.camera.y += (game.cameraTarget.y - game.camera.y) * cameraLerp;
+            game.camera.z += (game.cameraTarget.z - game.camera.z) * cameraLerp;
+            
+            // Update Game of Life (every 10 frames)
+            game.gameOfLifeUpdateCounter++;
+            if (game.gameOfLifeUpdateCounter >= 10) {
+                game.gameOfLifeUpdateCounter = 0;
+                if (game.gameOfLife) {
+                    game.gameOfLife.update();
+                }
+            }
 
             // Update motion trails
             game.entities.forEach(entity => {
@@ -1373,203 +1866,474 @@
             }
         }
 
+        // 3D world to screen conversion with FPV
+        function worldToScreen3D(wx, wy, wz) {
+            const canvas = game.canvas; // Get canvas from game object
+            const cx = game.camera.x;
+            const cy = game.camera.y;
+            const cz = game.camera.z;
+            
+            // Relative position
+            let relX = wx - cx;
+            let relY = wy - cy;
+            let relZ = wz - cz;
+            
+            if (game.fpvMode) {
+                // 6DOF rotation
+                const yawRad = game.cameraYaw * Math.PI / 180;
+                const pitchRad = game.cameraPitch * Math.PI / 180;
+                const rollRad = game.cameraRoll * Math.PI / 180;
+                
+                // Rotate by yaw
+                let tempX = relX * Math.cos(yawRad) - relY * Math.sin(yawRad);
+                let tempY = relX * Math.sin(yawRad) + relY * Math.cos(yawRad);
+                let tempZ = relZ;
+                
+                // Rotate by pitch
+                let tempY2 = tempY * Math.cos(pitchRad) - tempZ * Math.sin(pitchRad);
+                let tempZ2 = tempY * Math.sin(pitchRad) + tempZ * Math.cos(pitchRad);
+                let tempX2 = tempX;
+                
+                // Rotate by roll
+                let finalX = tempX2 * Math.cos(rollRad) + tempZ2 * Math.sin(rollRad);
+                let finalY = tempY2;
+                let finalZ = -tempX2 * Math.sin(rollRad) + tempZ2 * Math.cos(rollRad);
+                
+                // Perspective projection
+                const fov = 70;
+                const fovScale = 1.0 / Math.tan(fov * Math.PI / 360);
+                const depth = Math.max(0.1, -finalZ);
+                
+                return {
+                    x: canvas.width / 2 + finalX * fovScale * (canvas.height / depth),
+                    y: canvas.height / 2 - finalY * fovScale * (canvas.height / depth),
+                    depth: depth
+                };
+            } else {
+                // 2D fallback
+                return {
+                    x: relX + canvas.width / 2,
+                    y: relY + canvas.height / 2,
+                    depth: 1.0
+                };
+            }
+        }
+
         function render() {
             const ctx = game.ctx;
             const canvas = game.canvas;
 
-            // World to screen conversion (define first before use)
+            // World to screen conversion (2D fallback for compatibility)
             const worldToScreen = (wx, wy) => ({
                 x: wx - game.camera.x + canvas.width / 2,
                 y: wy - game.camera.y + canvas.height / 2
             });
 
-            // Clear with subtle grid effect
-            ctx.fillStyle = '#0a0a0a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw subtle grid for depth
-            ctx.strokeStyle = 'rgba(20, 20, 30, 0.3)';
-            ctx.lineWidth = 1;
-            const gridSize = CELL_SIZE;
-            const startX = Math.floor((game.camera.x - canvas.width / 2) / gridSize) * gridSize;
-            const startY = Math.floor((game.camera.y - canvas.height / 2) / gridSize) * gridSize;
-            
-            for (let x = startX; x < game.camera.x + canvas.width / 2 + gridSize; x += gridSize) {
-                const screen = worldToScreen(x, 0);
-                if (screen.x >= 0 && screen.x <= canvas.width) {
-                    ctx.beginPath();
-                    ctx.moveTo(screen.x, 0);
-                    ctx.lineTo(screen.x, canvas.height);
-                    ctx.stroke();
+            // Clear screen (Doom-style uses floor/ceiling colors, so we'll clear in raycasting section)
+            if (!game.fpvMode) {
+                ctx.fillStyle = '#0a0a0a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw subtle grid for depth (only in 2D mode)
+                ctx.strokeStyle = 'rgba(20, 20, 30, 0.3)';
+                ctx.lineWidth = 1;
+                const gridSize = CELL_SIZE;
+                const startX = Math.floor((game.camera.x - canvas.width / 2) / gridSize) * gridSize;
+                const startY = Math.floor((game.camera.y - canvas.height / 2) / gridSize) * gridSize;
+                
+                for (let x = startX; x < game.camera.x + canvas.width / 2 + gridSize; x += gridSize) {
+                    const screen = worldToScreen(x, 0);
+                    if (screen.x >= 0 && screen.x <= canvas.width) {
+                        ctx.beginPath();
+                        ctx.moveTo(screen.x, 0);
+                        ctx.lineTo(screen.x, canvas.height);
+                        ctx.stroke();
+                    }
                 }
-            }
-            
-            for (let y = startY; y < game.camera.y + canvas.height / 2 + gridSize; y += gridSize) {
-                const screen = worldToScreen(0, y);
-                if (screen.y >= 0 && screen.y <= canvas.height) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, screen.y);
-                    ctx.lineTo(canvas.width, screen.y);
-                    ctx.stroke();
+                
+                for (let y = startY; y < game.camera.y + canvas.height / 2 + gridSize; y += gridSize) {
+                    const screen = worldToScreen(0, y);
+                    if (screen.y >= 0 && screen.y <= canvas.height) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, screen.y);
+                        ctx.lineTo(canvas.width, screen.y);
+                        ctx.stroke();
+                    }
                 }
             }
 
-            // Draw maze walls with better visuals
-            const walls = game.maze.getWallRects(game.camera.x, game.camera.y, canvas.width, canvas.height);
-            walls.forEach(wall => {
-                const screen = worldToScreen(wall.x, wall.y);
-                if (screen.x > -CELL_SIZE && screen.x < canvas.width + CELL_SIZE &&
-                    screen.y > -CELL_SIZE && screen.y < canvas.height + CELL_SIZE) {
-                    // Wall shadow
-                    ctx.fillStyle = '#1a1a1a';
-                    ctx.fillRect(screen.x + 2, screen.y + 2, wall.width, wall.height);
-                    // Main wall
-                    ctx.fillStyle = '#3c3c50';
-                    ctx.fillRect(screen.x, screen.y, wall.width, wall.height);
-                    // Wall border
-                    ctx.strokeStyle = '#282838';
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(screen.x, screen.y, wall.width, wall.height);
-                    // Highlight
-                    ctx.strokeStyle = '#4a4a60';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.moveTo(screen.x, screen.y);
-                    ctx.lineTo(screen.x + wall.width, screen.y);
-                    ctx.stroke();
-                }
-            });
-
-            // Draw motion trails
-            game.entities.forEach(entity => {
-                if (!entity || !entity.trail || entity.trail.length < 2) return;
+            // Doom-style raycasting renderer
+            if (game.fpvMode) {
+                const FOV = 60; // Field of view in degrees
+                const MAX_DEPTH = 1000; // Maximum ray distance
+                const WALL_HEIGHT = CEILING_LEVEL; // Wall height
+                const CAMERA_HEIGHT_OFFSET = CAMERA_HEIGHT;
                 
-                ctx.save();
-                ctx.strokeStyle = entity.id === 'player' ? '#0066ff' : '#ff0000';
-                ctx.lineWidth = 3;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.beginPath();
+                // Camera position and rotation
+                const camX = game.camera.x;
+                const camY = game.camera.y;
+                const camZ = game.camera.z;
+                const yawRad = game.cameraYaw * Math.PI / 180;
+                const pitchRad = game.cameraPitch * Math.PI / 180;
                 
-                let firstPoint = true;
-                entity.trail.forEach((point, index) => {
-                    if (!point || point.x === undefined || point.y === undefined) return;
-                    const screen = worldToScreen(point.x, point.y);
-                    ctx.globalAlpha = (point.alpha || 1.0) * 0.3;
-                    if (firstPoint) {
-                        ctx.moveTo(screen.x, screen.y);
-                        firstPoint = false;
+                // Pre-calculate direction vectors
+                const forwardX = Math.sin(yawRad);
+                const forwardY = -Math.cos(yawRad);
+                const rightX = Math.cos(yawRad);
+                const rightY = Math.sin(yawRad);
+                
+                // Draw floor and ceiling first (Doom-style)
+                const halfHeight = canvas.height / 2;
+                const horizonY = halfHeight - Math.tan(pitchRad) * (canvas.height / 2);
+                
+                // Ceiling
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fillRect(0, 0, canvas.width, Math.max(0, horizonY));
+                
+                // Floor
+                ctx.fillStyle = '#2a2a2a';
+                ctx.fillRect(0, Math.min(canvas.height, horizonY), canvas.width, canvas.height);
+                
+                // Raycast for each column
+                const rayResults = [];
+                for (let x = 0; x < canvas.width; x++) {
+                    // Calculate ray angle (screen space to world space)
+                    const cameraX = 2 * x / canvas.width - 1; // -1 to 1
+                    const rayDirX = forwardX + rightX * cameraX * Math.tan(FOV * Math.PI / 360);
+                    const rayDirY = forwardY + rightY * cameraX * Math.tan(FOV * Math.PI / 360);
+                    
+                    // DDA algorithm for raycasting
+                    // Avoid division by zero
+                    if (Math.abs(rayDirX) < 0.0001) rayDirX = rayDirX < 0 ? -0.0001 : 0.0001;
+                    if (Math.abs(rayDirY) < 0.0001) rayDirY = rayDirY < 0 ? -0.0001 : 0.0001;
+                    
+                    let mapX = Math.floor(camX / CELL_SIZE);
+                    let mapY = Math.floor(camY / CELL_SIZE);
+                    
+                    let deltaDistX = Math.abs(1 / rayDirX);
+                    let deltaDistY = Math.abs(1 / rayDirY);
+                    
+                    let stepX, stepY;
+                    let sideDistX, sideDistY;
+                    
+                    if (rayDirX < 0) {
+                        stepX = -1;
+                        sideDistX = (camX / CELL_SIZE - mapX) * deltaDistX;
                     } else {
-                        ctx.lineTo(screen.x, screen.y);
+                        stepX = 1;
+                        sideDistX = (mapX + 1.0 - camX / CELL_SIZE) * deltaDistX;
+                    }
+                    
+                    if (rayDirY < 0) {
+                        stepY = -1;
+                        sideDistY = (camY / CELL_SIZE - mapY) * deltaDistY;
+                    } else {
+                        stepY = 1;
+                        sideDistY = (mapY + 1.0 - camY / CELL_SIZE) * deltaDistY;
+                    }
+                    
+                    // Perform DDA
+                    let hit = false;
+                    let side = 0; // 0 = X-side, 1 = Y-side
+                    let perpWallDist = 0;
+                    let steps = 0;
+                    const maxSteps = Math.ceil(MAX_DEPTH / CELL_SIZE);
+                    
+                    while (!hit && steps < maxSteps) {
+                        if (sideDistX < sideDistY) {
+                            sideDistX += deltaDistX;
+                            mapX += stepX;
+                            side = 0;
+                        } else {
+                            sideDistY += deltaDistY;
+                            mapY += stepY;
+                            side = 1;
+                        }
+                        steps++;
+                        
+                        // Check if we hit a wall
+                        const [chunkX, chunkY] = game.maze.getChunkCoords(mapX * CELL_SIZE, mapY * CELL_SIZE);
+                        const chunk = game.maze.getOrCreateChunk(chunkX, chunkY);
+                        const localX = ((mapX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        const localY = ((mapY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        
+                        if (chunk.walls.has(`${localX},${localY}`)) {
+                            hit = true;
+                            if (side === 0) {
+                                perpWallDist = (mapX - camX / CELL_SIZE + (1 - stepX) / 2) / rayDirX;
+                            } else {
+                                perpWallDist = (mapY - camY / CELL_SIZE + (1 - stepY) / 2) / rayDirY;
+                            }
+                        }
+                    }
+                    
+                    if (hit) {
+                        // Calculate wall height
+                        const lineHeight = Math.abs(canvas.height / perpWallDist);
+                        const drawStart = -lineHeight / 2 + canvas.height / 2 + Math.tan(pitchRad) * (canvas.height / 2);
+                        const drawEnd = lineHeight / 2 + canvas.height / 2 + Math.tan(pitchRad) * (canvas.height / 2);
+                        
+                        // Calculate wall color based on distance and side
+                        const distance = perpWallDist * CELL_SIZE;
+                        const brightness = Math.max(0.3, Math.min(1.0, 1.0 - distance / 500));
+                        
+                        // Get wall color from chunk
+                        const hashCode = (str) => {
+                            let hash = 0;
+                            for (let i = 0; i < str.length; i++) {
+                                const char = str.charCodeAt(i);
+                                hash = ((hash << 5) - hash) + char;
+                                hash = hash & hash;
+                            }
+                            return Math.abs(hash);
+                        };
+                        const seed = hashCode(`${mapX}_${mapY}`);
+                        const rng = (seed * 9301 + 49297) % 233280 / 233280;
+                        const baseR = Math.floor(30 + rng * 50);
+                        const baseG = Math.floor(25 + rng * 35);
+                        const baseB = Math.floor(20 + rng * 30);
+                        
+                        // Darker on sides for depth
+                        const wallR = Math.floor(baseR * brightness * (side === 1 ? 0.8 : 1.0));
+                        const wallG = Math.floor(baseG * brightness * (side === 1 ? 0.8 : 1.0));
+                        const wallB = Math.floor(baseB * brightness * (side === 1 ? 0.8 : 1.0));
+                        
+                        // Draw wall column
+                        ctx.fillStyle = `rgb(${wallR}, ${wallG}, ${wallB})`;
+                        ctx.fillRect(x, Math.max(0, drawStart), 1, Math.min(canvas.height, drawEnd) - Math.max(0, drawStart));
+                        
+                        // Store ray result for sprite rendering
+                        rayResults.push({
+                            x: x,
+                            distance: distance,
+                            wallStart: drawStart,
+                            wallEnd: drawEnd
+                        });
+                        
+                        // Render Game of Life blood pattern on close walls
+                        if (distance < 200 && game.gameOfLife && x % 2 === 0) { // Every other column for performance
+                            const pattern = game.gameOfLife.getPattern();
+                            const golHeight = game.gameOfLife.height;
+                            const wallHeight = drawEnd - drawStart;
+                            const cellH = Math.max(1, wallHeight / golHeight);
+                            
+                            if (cellH >= 1) {
+                                for (let y = 0; y < golHeight; y++) {
+                                    if (pattern[y][Math.floor(x / canvas.width * game.gameOfLife.width)]) {
+                                        const screenY = drawStart + (y * wallHeight) / golHeight;
+                                        if (screenY >= drawStart && screenY < drawEnd) {
+                                            const variation = ((x * 7 + y * 11) % 31) - 15;
+                                            const bloodRed = Math.max(120, Math.min(200, 139 + (y / golHeight) * 39 + variation));
+                                            const bloodGreen = Math.max(0, Math.min(60, (y / golHeight) * 34 + Math.floor(variation / 2)));
+                                            const bloodBlue = Math.max(0, Math.min(50, (y / golHeight) * 33 + Math.floor(variation / 3)));
+                                            
+                                            ctx.fillStyle = `rgb(${bloodRed}, ${bloodGreen}, ${bloodBlue})`;
+                                            ctx.fillRect(x, screenY, 1, Math.max(1, cellH));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        rayResults.push({ x: x, distance: MAX_DEPTH, wallStart: 0, wallEnd: 0 });
+                    }
+                }
+                
+                // Store ray results for sprite rendering
+                game.rayResults = rayResults;
+            } else {
+                // 2D fallback rendering
+                const walls = game.maze.getWallRects(game.camera.x, game.camera.y, canvas.width, canvas.height);
+                walls.forEach(wall => {
+                    const screen = worldToScreen(wall.x, wall.y);
+                    if (screen.x > -CELL_SIZE && screen.x < canvas.width + CELL_SIZE &&
+                        screen.y > -CELL_SIZE && screen.y < canvas.height + CELL_SIZE) {
+                        ctx.fillStyle = '#3c3c50';
+                        ctx.fillRect(screen.x, screen.y, wall.width, wall.height);
                     }
                 });
-                
-                ctx.stroke();
-                ctx.restore();
-            });
-
-            // Draw particles
-            if (game.particles && game.particles.length > 0) {
-                game.particles.forEach(particle => {
-                    if (!particle || particle.x === undefined || particle.y === undefined) return;
-                    const screen = worldToScreen(particle.x, particle.y);
-                    if (screen.x < -20 || screen.x > canvas.width + 20 ||
-                        screen.y < -20 || screen.y > canvas.height + 20) return;
-                    
-                    ctx.save();
-                    ctx.globalAlpha = particle.alpha || 1.0;
-                    ctx.fillStyle = particle.color || '#ffffff';
-                    ctx.beginPath();
-                    ctx.arc(screen.x, screen.y, particle.size || 2, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.restore();
-                });
             }
 
-            // Draw entities with enhanced graphics
-            game.entities.forEach(entity => {
-                if (!entity || entity.x === undefined || entity.y === undefined) return;
-                
-                const screen = worldToScreen(entity.x, entity.y);
-                if (screen.x < -100 || screen.x > canvas.width + 100 ||
-                    screen.y < -100 || screen.y > canvas.height + 100) return;
-
-                const isPlayer = entity.id === 'player';
-                const color = isPlayer ? '#0066ff' : '#ff0000';
-                const radius = entity.radius || (isPlayer ? PLAYER_RADIUS : NPC_RADIUS);
-                const vx = entity.vx || 0;
-                const vy = entity.vy || 0;
-                const speed = Math.sqrt(vx * vx + vy * vy);
-
-                // Draw shadow
-                ctx.save();
-                ctx.globalAlpha = 0.3;
-                ctx.beginPath();
-                ctx.ellipse(screen.x + 2, screen.y + 2, radius * 0.8, radius * 0.4, 0, 0, Math.PI * 2);
-                ctx.fillStyle = '#000000';
-                ctx.fill();
-                ctx.restore();
-
-                // Draw glow effect when moving
-                if (speed > 10) {
+            // Draw motion trails (only in 2D mode, not Doom-style)
+            if (!game.fpvMode) {
+                game.entities.forEach(entity => {
+                    if (!entity || !entity.trail || entity.trail.length < 2) return;
+                    
                     ctx.save();
-                    const glowSize = radius + (speed / 10);
-                    const gradient = ctx.createRadialGradient(screen.x, screen.y, radius, screen.x, screen.y, glowSize);
-                    gradient.addColorStop(0, color + '80');
+                    ctx.strokeStyle = entity.id === 'player' ? '#0066ff' : '#ff0000';
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.beginPath();
+                    
+                    let firstPoint = true;
+                    entity.trail.forEach((point, index) => {
+                        if (!point || point.x === undefined || point.y === undefined) return;
+                        const screen = worldToScreen(point.x, point.y);
+                        ctx.globalAlpha = (point.alpha || 1.0) * 0.3;
+                        if (firstPoint) {
+                            ctx.moveTo(screen.x, screen.y);
+                            firstPoint = false;
+                        } else {
+                            ctx.lineTo(screen.x, screen.y);
+                        }
+                    });
+                    
+                    ctx.stroke();
+                    ctx.restore();
+                });
+
+                // Draw particles (only in 2D mode)
+                if (game.particles && game.particles.length > 0) {
+                    game.particles.forEach(particle => {
+                        if (!particle || particle.x === undefined || particle.y === undefined) return;
+                        const screen = worldToScreen(particle.x, particle.y);
+                        if (screen.x < -20 || screen.x > canvas.width + 20 ||
+                            screen.y < -20 || screen.y > canvas.height + 20) return;
+                        
+                        ctx.save();
+                        ctx.globalAlpha = particle.alpha || 1.0;
+                        ctx.fillStyle = particle.color || '#ffffff';
+                        ctx.beginPath();
+                        ctx.arc(screen.x, screen.y, particle.size || 2, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    });
+                }
+            }
+
+            // Draw entities as Doom-style sprites (billboards)
+            if (game.fpvMode) {
+                // Don't render player in FPV mode
+                const entitiesToRender = game.entities.filter(e => e.id !== 'player');
+                
+                // Calculate sprite positions and distances
+                const sprites = entitiesToRender.map(entity => {
+                    if (!entity || entity.x === undefined || entity.y === undefined) return null;
+                    
+                    const dx = entity.x - game.camera.x;
+                    const dy = entity.y - game.camera.y;
+                    const dz = (entity.z || 0) - game.camera.z;
+                    
+                    // Transform to camera space
+                    const yawRad = game.cameraYaw * Math.PI / 180;
+                    const pitchRad = game.cameraPitch * Math.PI / 180;
+                    
+                    // Rotate by yaw
+                    let tempX = dx * Math.cos(yawRad) - dy * Math.sin(yawRad);
+                    let tempY = dx * Math.sin(yawRad) + dy * Math.cos(yawRad);
+                    let tempZ = dz;
+                    
+                    // Rotate by pitch
+                    let finalY = tempY * Math.cos(pitchRad) - tempZ * Math.sin(pitchRad);
+                    let finalZ = tempY * Math.sin(pitchRad) + tempZ * Math.cos(pitchRad);
+                    
+                    // Project to screen
+                    const FOV = 60;
+                    const fovScale = 1.0 / Math.tan(FOV * Math.PI / 360);
+                    const depth = Math.max(0.1, -tempX);
+                    
+                    if (depth <= 0 || tempX < 0) return null; // Behind camera
+                    
+                    const screenX = canvas.width / 2 + tempY * fovScale * (canvas.height / depth);
+                    const screenY = canvas.height / 2 - finalY * fovScale * (canvas.height / depth);
+                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    
+                    return {
+                        entity: entity,
+                        screenX: screenX,
+                        screenY: screenY,
+                        distance: distance,
+                        depth: depth
+                    };
+                }).filter(s => s !== null);
+                
+                // Sort by distance (farthest first for proper depth)
+                sprites.sort((a, b) => b.distance - a.distance);
+                
+                // Render sprites
+                sprites.forEach(sprite => {
+                    const entity = sprite.entity;
+                    const isPlayer = entity.id === 'player';
+                    const color = isPlayer ? '#0066ff' : '#ff0000';
+                    const radius = entity.radius || (isPlayer ? PLAYER_RADIUS : NPC_RADIUS);
+                    
+                    // Calculate sprite size based on distance
+                    const spriteSize = Math.max(5, Math.min(50, radius * 2 * (canvas.height / sprite.depth)));
+                    const spriteX = sprite.screenX - spriteSize / 2;
+                    const spriteY = sprite.screenY - spriteSize / 2;
+                    
+                    // Check if sprite is on screen
+                    if (spriteX + spriteSize < 0 || spriteX > canvas.width ||
+                        spriteY + spriteSize < 0 || spriteY > canvas.height) return;
+                    
+                    // Check if sprite is behind a wall (simple depth check)
+                    const screenXInt = Math.floor(sprite.screenX);
+                    if (screenXInt >= 0 && screenXInt < canvas.width && game.rayResults) {
+                        const ray = game.rayResults[screenXInt];
+                        if (ray && sprite.distance > ray.distance) return; // Behind wall
+                    }
+                    
+                    // Brightness based on distance
+                    const brightness = Math.max(0.5, Math.min(1.0, 1.0 - sprite.distance / 500));
+                    
+                    // Draw sprite as circle (Doom-style)
+                    ctx.save();
+                    ctx.globalAlpha = brightness;
+                    
+                    // Draw glow
+                    const gradient = ctx.createRadialGradient(
+                        sprite.screenX, sprite.screenY, 0,
+                        sprite.screenX, sprite.screenY, spriteSize / 2
+                    );
+                    gradient.addColorStop(0, color);
                     gradient.addColorStop(1, color + '00');
                     ctx.fillStyle = gradient;
                     ctx.beginPath();
-                    ctx.arc(screen.x, screen.y, glowSize, 0, Math.PI * 2);
+                    ctx.arc(sprite.screenX, sprite.screenY, spriteSize / 2, 0, Math.PI * 2);
                     ctx.fill();
-                    ctx.restore();
-                }
-
-                // Draw entity body
-                ctx.beginPath();
-                ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
-                const bodyGradient = ctx.createRadialGradient(
-                    screen.x - radius * 0.3, screen.y - radius * 0.3, 0,
-                    screen.x, screen.y, radius
-                );
-                bodyGradient.addColorStop(0, isPlayer ? '#3399ff' : '#ff3333');
-                bodyGradient.addColorStop(1, color);
-                ctx.fillStyle = bodyGradient;
-                ctx.fill();
-
-                // Draw border
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-
-                // Draw inner highlight
-                ctx.strokeStyle = isPlayer ? '#66ccff' : '#ff6666';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.arc(screen.x - radius * 0.3, screen.y - radius * 0.3, radius * 0.6, 0, Math.PI * 2);
-                ctx.stroke();
-
-                // Draw direction indicator when moving
-                if (speed > 5 && vx !== undefined && vy !== undefined) {
-                    const angle = Math.atan2(vy, vx);
+                    
+                    // Draw sprite body
+                    const bodyGradient = ctx.createRadialGradient(
+                        sprite.screenX - spriteSize * 0.15, sprite.screenY - spriteSize * 0.15, 0,
+                        sprite.screenX, sprite.screenY, spriteSize / 2
+                    );
+                    bodyGradient.addColorStop(0, isPlayer ? '#3399ff' : '#ff3333');
+                    bodyGradient.addColorStop(1, color);
+                    ctx.fillStyle = bodyGradient;
+                    ctx.beginPath();
+                    ctx.arc(sprite.screenX, sprite.screenY, spriteSize / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Draw border
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(screen.x, screen.y);
-                    ctx.lineTo(
-                        screen.x + Math.cos(angle) * (radius + 5),
-                        screen.y + Math.sin(angle) * (radius + 5)
-                    );
                     ctx.stroke();
-                }
+                    
+                    ctx.restore();
+                });
+            } else {
+                // 2D fallback rendering
+                game.entities.forEach(entity => {
+                    if (!entity || entity.x === undefined || entity.y === undefined) return;
+                    
+                    const screen = worldToScreen(entity.x, entity.y);
+                    if (screen.x < -100 || screen.x > canvas.width + 100 ||
+                        screen.y < -100 || screen.y > canvas.height + 100) return;
 
-                // Draw label with background
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                ctx.fillRect(screen.x - 25, screen.y - radius - 25, 50, 15);
-                ctx.fillStyle = '#ffffff';
-                ctx.font = '11px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(entity.id, screen.x, screen.y - radius - 13);
-            });
+                    const isPlayer = entity.id === 'player';
+                    const color = isPlayer ? '#0066ff' : '#ff0000';
+                    const radius = entity.radius || (isPlayer ? PLAYER_RADIUS : NPC_RADIUS);
+
+                    ctx.beginPath();
+                    ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = color;
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                });
+            }
 
             // Draw mouse/touch target indicator
             const inputActive = game.mouse.active || game.touch.active;
@@ -1622,10 +2386,10 @@
             document.getElementById('frame').textContent = game.frame;
             document.getElementById('entities').textContent = game.entities.length;
             document.getElementById('chunks').textContent = game.maze.chunks.size;
-            document.getElementById('playerPos').textContent = `(${Math.floor(game.player.x)}, ${Math.floor(game.player.y)})`;
+            document.getElementById('playerPos').textContent = `(${Math.floor(game.player.x)}, ${Math.floor(game.player.y)}, ${Math.floor(game.player.z || 0)})`;
             document.getElementById('playerHealth').textContent = game.player.health;
             document.getElementById('npcCount').textContent = game.entities.filter(e => e.id.startsWith('npc')).length;
-            document.getElementById('cameraPos').textContent = `(${Math.floor(game.camera.x)}, ${Math.floor(game.camera.y)})`;
+            document.getElementById('cameraPos').textContent = `(${Math.floor(game.camera.x)}, ${Math.floor(game.camera.y)}, ${Math.floor(game.camera.z || 0)})`;
         }
 
         function gameLoop() {
@@ -1645,7 +2409,25 @@
 
         // Start game when page loads
         window.addEventListener('load', () => {
-            setTimeout(init, 500); // Small delay for visual effect
+            setTimeout(() => {
+                init();
+                // Request fullscreen after initialization (requires user interaction, so we do it after a click)
+                // Try to enter fullscreen automatically
+                setTimeout(() => {
+                    const element = document.documentElement;
+                    if (element.requestFullscreen) {
+                        element.requestFullscreen().catch(err => {
+                            console.log('Fullscreen request failed:', err);
+                        });
+                    } else if (element.webkitRequestFullscreen) {
+                        element.webkitRequestFullscreen();
+                    } else if (element.mozRequestFullScreen) {
+                        element.mozRequestFullScreen();
+                    } else if (element.msRequestFullscreen) {
+                        element.msRequestFullscreen();
+                    }
+                }, 100);
+            }, 500); // Small delay for visual effect
         });
     </script>
 </body>
