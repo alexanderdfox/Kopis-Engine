@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Kopis Engine - Web Edition</title>
     <style>
         * {
@@ -71,6 +71,11 @@
             image-rendering: crisp-edges;
             image-rendering: pixelated;
             transition: box-shadow 0.3s ease;
+            touch-action: none; /* Prevent default touch behaviors like scrolling */
+            user-select: none; /* Prevent text selection */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
         }
 
         #gameCanvas:focus {
@@ -180,15 +185,49 @@
             .header {
                 flex-direction: column;
                 gap: 10px;
+                padding: 10px 15px;
             }
 
             .stats {
                 flex-wrap: wrap;
                 justify-content: center;
+                font-size: 12px;
+            }
+
+            .stat-item {
+                padding: 3px 8px;
             }
 
             .info-panel {
                 display: none;
+            }
+
+            .controls {
+                bottom: 10px;
+                padding: 10px 15px;
+                font-size: 10px;
+            }
+
+            .controls h3 {
+                font-size: 12px;
+                margin-bottom: 8px;
+            }
+
+            .controls-grid {
+                width: 120px;
+                gap: 3px;
+            }
+
+            .key {
+                padding: 6px;
+                font-size: 10px;
+            }
+
+            #gameCanvas {
+                width: 100%;
+                height: auto;
+                max-width: 100vw;
+                max-height: calc(100vh - 120px);
             }
         }
     </style>
@@ -228,7 +267,7 @@
                 <div class="key" id="keyD">D</div>
             </div>
             <p style="margin-top: 10px; font-size: 11px; color: #00d4ff; text-align: center;">
-                Move mouse to control player
+                Move mouse/touch to control player
             </p>
         </div>
     </div>
@@ -254,6 +293,7 @@
             cameraTarget: { x: 0, y: 0 },
             keys: {},
             mouse: { x: 0, y: 0, worldX: 0, worldY: 0, active: false },
+            touch: { x: 0, y: 0, worldX: 0, worldY: 0, active: false, touchId: null },
             frame: 0,
             lastTime: 0,
             fps: 60,
@@ -911,6 +951,67 @@
                 game.mouse.active = false;
             });
 
+            // Input handling - Touch (for tablets and phones)
+            game.canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent scrolling and other default behaviors
+                if (e.touches.length > 0) {
+                    const touch = e.touches[0];
+                    const rect = game.canvas.getBoundingClientRect();
+                    game.touch.x = touch.clientX - rect.left;
+                    game.touch.y = touch.clientY - rect.top;
+                    game.touch.touchId = touch.identifier;
+                    
+                    // Convert screen coordinates to world coordinates
+                    game.touch.worldX = game.camera.x + (game.touch.x - game.canvas.width / 2);
+                    game.touch.worldY = game.camera.y + (game.touch.y - game.canvas.height / 2);
+                    game.touch.active = true;
+                }
+            }, { passive: false });
+
+            game.canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault(); // Prevent scrolling
+                if (game.touch.active && game.touch.touchId !== null) {
+                    // Find the touch with matching ID
+                    for (let i = 0; i < e.touches.length; i++) {
+                        if (e.touches[i].identifier === game.touch.touchId) {
+                            const touch = e.touches[i];
+                            const rect = game.canvas.getBoundingClientRect();
+                            game.touch.x = touch.clientX - rect.left;
+                            game.touch.y = touch.clientY - rect.top;
+                            
+                            // Convert screen coordinates to world coordinates
+                            game.touch.worldX = game.camera.x + (game.touch.x - game.canvas.width / 2);
+                            game.touch.worldY = game.camera.y + (game.touch.y - game.canvas.height / 2);
+                            break;
+                        }
+                    }
+                }
+            }, { passive: false });
+
+            game.canvas.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                // Check if our tracked touch ended
+                if (game.touch.touchId !== null) {
+                    let touchStillActive = false;
+                    for (let i = 0; i < e.touches.length; i++) {
+                        if (e.touches[i].identifier === game.touch.touchId) {
+                            touchStillActive = true;
+                            break;
+                        }
+                    }
+                    if (!touchStillActive) {
+                        game.touch.active = false;
+                        game.touch.touchId = null;
+                    }
+                }
+            }, { passive: false });
+
+            game.canvas.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                game.touch.active = false;
+                game.touch.touchId = null;
+            }, { passive: false });
+
             // Hide loading
             document.getElementById('loading').style.display = 'none';
 
@@ -938,6 +1039,12 @@
                 game.mouse.worldY = game.camera.y + (game.mouse.y - game.canvas.height / 2);
             }
 
+            // Update touch world coordinates based on current camera position
+            if (game.touch.active) {
+                game.touch.worldX = game.camera.x + (game.touch.x - game.canvas.width / 2);
+                game.touch.worldY = game.camera.y + (game.touch.y - game.canvas.height / 2);
+            }
+
             // Player input - Keyboard
             let vx = 0, vy = 0;
             if (game.keys['w']) vy -= PLAYER_SPEED;
@@ -945,8 +1052,21 @@
             if (game.keys['a']) vx -= PLAYER_SPEED;
             if (game.keys['d']) vx += PLAYER_SPEED;
 
-            // Player input - Mouse (moves towards cursor, overrides keyboard)
-            if (game.mouse.active) {
+            // Player input - Touch (for tablets/phones, highest priority)
+            if (game.touch.active) {
+                const dx = game.touch.worldX - game.player.x;
+                const dy = game.touch.worldY - game.player.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Only move if touch is far enough away (dead zone)
+                if (distance > 5) {
+                    const speed = Math.min(PLAYER_SPEED, distance * 2); // Faster when far, slower when close
+                    vx = (dx / distance) * speed;
+                    vy = (dy / distance) * speed;
+                }
+            }
+            // Player input - Mouse (moves towards cursor, overrides keyboard but not touch)
+            else if (game.mouse.active) {
                 const dx = game.mouse.worldX - game.player.x;
                 const dy = game.mouse.worldY - game.player.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
@@ -960,7 +1080,7 @@
             }
 
             // Normalize diagonal (only for keyboard input)
-            if (vx !== 0 && vy !== 0 && !game.mouse.active) {
+            if (vx !== 0 && vy !== 0 && !game.mouse.active && !game.touch.active) {
                 vx *= 0.707;
                 vy *= 0.707;
             }
@@ -1451,11 +1571,15 @@
                 ctx.fillText(entity.id, screen.x, screen.y - radius - 13);
             });
 
-            // Draw mouse target indicator
-            if (game.mouse.active) {
-                const mouseScreen = worldToScreen(game.mouse.worldX, game.mouse.worldY);
-                if (mouseScreen.x >= 0 && mouseScreen.x <= canvas.width &&
-                    mouseScreen.y >= 0 && mouseScreen.y <= canvas.height) {
+            // Draw mouse/touch target indicator
+            const inputActive = game.mouse.active || game.touch.active;
+            const inputWorldX = game.touch.active ? game.touch.worldX : game.mouse.worldX;
+            const inputWorldY = game.touch.active ? game.touch.worldY : game.mouse.worldY;
+            
+            if (inputActive) {
+                const targetScreen = worldToScreen(inputWorldX, inputWorldY);
+                if (targetScreen.x >= 0 && targetScreen.x <= canvas.width &&
+                    targetScreen.y >= 0 && targetScreen.y <= canvas.height) {
                     
                     ctx.save();
                     ctx.strokeStyle = '#00d4ff';
@@ -1465,18 +1589,19 @@
                     // Draw crosshair
                     const crossSize = 10;
                     ctx.beginPath();
-                    ctx.moveTo(mouseScreen.x - crossSize, mouseScreen.y);
-                    ctx.lineTo(mouseScreen.x + crossSize, mouseScreen.y);
-                    ctx.moveTo(mouseScreen.x, mouseScreen.y - crossSize);
-                    ctx.lineTo(mouseScreen.x, mouseScreen.y + crossSize);
+                    ctx.moveTo(targetScreen.x - crossSize, targetScreen.y);
+                    ctx.lineTo(targetScreen.x + crossSize, targetScreen.y);
+                    ctx.moveTo(targetScreen.x, targetScreen.y - crossSize);
+                    ctx.lineTo(targetScreen.x, targetScreen.y + crossSize);
                     ctx.stroke();
                     
-                    // Draw outer circle
+                    // Draw outer circle (larger for touch)
+                    const circleSize = game.touch.active ? 20 : 15;
                     ctx.beginPath();
-                    ctx.arc(mouseScreen.x, mouseScreen.y, 15, 0, Math.PI * 2);
+                    ctx.arc(targetScreen.x, targetScreen.y, circleSize, 0, Math.PI * 2);
                     ctx.stroke();
                     
-                    // Draw line from player to mouse
+                    // Draw line from player to target
                     const playerScreen = worldToScreen(game.player.x, game.player.y);
                     ctx.strokeStyle = '#00d4ff';
                     ctx.lineWidth = 1;
@@ -1484,7 +1609,7 @@
                     ctx.setLineDash([5, 5]);
                     ctx.beginPath();
                     ctx.moveTo(playerScreen.x, playerScreen.y);
-                    ctx.lineTo(mouseScreen.x, mouseScreen.y);
+                    ctx.lineTo(targetScreen.x, targetScreen.y);
                     ctx.stroke();
                     ctx.setLineDash([]);
                     
