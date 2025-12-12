@@ -2068,12 +2068,12 @@
                 ctx.fillRect(0, Math.min(canvas.height, horizonY), canvas.width, canvas.height);
                 
                 // Raycast for each column
-                const rayResults = [];
+                let rayResults = [];
                 for (let x = 0; x < canvas.width; x++) {
                     // Calculate ray angle (screen space to world space)
                     const cameraX = 2 * x / canvas.width - 1; // -1 to 1
-                    const rayDirX = forwardX + rightX * cameraX * Math.tan(FOV * Math.PI / 360);
-                    const rayDirY = forwardY + rightY * cameraX * Math.tan(FOV * Math.PI / 360);
+                    let rayDirX = forwardX + rightX * cameraX * Math.tan(FOV * Math.PI / 360);
+                    let rayDirY = forwardY + rightY * cameraX * Math.tan(FOV * Math.PI / 360);
                     
                     // DDA algorithm for raycasting
                     // Avoid division by zero
