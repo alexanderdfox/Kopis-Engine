@@ -189,9 +189,14 @@ class ParallelBranches:
         - Ground collision (Z axis)
         """
         updated_entities = []
-        gravity = 9.8 * 50  # Scaled gravity (pixels per second squared)
+        # Realistic gravity for a 10-foot room
+        # Scale: 1 foot = 30 units (so 10 feet = 300 units)
+        # Real gravity: 32.2 ft/s² = 9.8 m/s²
+        # In game units: 32.2 ft/s² * 30 units/ft = 966 units/s²
+        gravity = 32.2 * 30  # Realistic gravity: 966 units/s² (based on 1 foot = 30 units)
         friction_coefficient = 0.95  # Friction factor (0.95 = 5% velocity loss per frame)
         ground_level = 0.0  # Ground is at Z = 0 (positive Z is up in the air)
+        ceiling_level = 300.0  # Ceiling is at Z = 300 units (10 feet = 300 units at 30 units/foot)
         
         for entity in entities:
             # Get current state (3D)
@@ -203,6 +208,8 @@ class ParallelBranches:
             # When vz is positive (moving up), gravity reduces it
             # When vz is negative (falling), gravity makes it more negative (faster fall)
             if entity.properties.get('affected_by_gravity', True):
+                # Always apply gravity - this ensures entities fall back down after jumping
+                # Ground collision below will stop downward velocity when hitting the ground
                 vz -= gravity * delta_time  # Gravity always pulls down (decreases vz)
             
             # Apply friction (only to X and Y, not Z)
@@ -230,6 +237,14 @@ class ParallelBranches:
                 entity.properties['on_ground'] = True
             else:
                 # In the air
+                entity.properties['on_ground'] = False
+            
+            # Ceiling collision (Z axis) - prevent going above ceiling and make player fall
+            if new_z > ceiling_level:
+                new_z = ceiling_level
+                if vz > 0:  # Only stop upward velocity if hitting ceiling
+                    vz = 0  # Stop upward velocity, gravity will pull down
+                # Mark as hitting ceiling (will fall due to gravity)
                 entity.properties['on_ground'] = False
             
             # Check maze collision if maze exists (X/Y plane only)
@@ -421,8 +436,8 @@ class ParallelBranches:
         self._ai_frame_count = frame_count + 1
         
         # Performance optimization: only update NPCs within reasonable distance
-        MAX_UPDATE_DISTANCE = 2000.0  # Only update NPCs within 2000 pixels
-        PATHFINDING_BATCH_SIZE = 3  # Update max 3 NPCs' paths per frame
+        MAX_UPDATE_DISTANCE = 400.0  # Only update NPCs within 400 pixels (reduced for better FPS)
+        PATHFINDING_BATCH_SIZE = 2  # Update max 2 NPCs' paths per frame (reduced for better FPS)
         
         npcs_to_update = []
         for entity in entities:
@@ -795,7 +810,9 @@ class KopisEngine:
         self.camera_pitch = 0.0  # Vertical rotation (up/down) in degrees
         self.camera_roll = 0.0  # Roll rotation (tilt left/right) in degrees - 6DOF
         self.fpv_mode = True  # First-person view mode
-        self.camera_height = 30.0  # Camera height above ground (eye level)
+        # Camera height for 10-foot room: standard FPS eye level is ~5 feet = 150 units
+        # Scale: 1 foot = 30 units, so 5 feet = 150 units
+        self.camera_height = 150.0  # Camera height above ground (eye level at ~5 feet)
         
         # Initialize game rules
         self._initialize_rules()
@@ -822,7 +839,15 @@ class KopisEngine:
         keys = input_data.get('keys', {})
         mouse_data = input_data.get('mouse', {})
         player_speed = 200.0  # pixels per second
-        jump_force = 400.0  # Jump velocity (pixels per second)
+        # Calculate jump force for realistic 10-foot room
+        # Scale: 1 foot = 30 units, so 10 feet = 300 units
+        # Gravity: 966 units/s² (32.2 ft/s² * 30 units/ft)
+        # Target jump height: 7 feet = 210 units (leaving 3 feet headroom)
+        # Using physics: max_height = v₀² / (2 * g)
+        # 210 = jump_force² / (2 * 966)
+        # jump_force² = 210 * 2 * 966 = 405,720
+        # jump_force = √405,720 ≈ 637
+        jump_force = 637.0  # Jump velocity to reach 7 feet (210 units) in a 10-foot room
         
         # Get current velocity (3D) - handle both 2D and 3D for compatibility
         if len(self.player.velocity) == 3:
@@ -1895,19 +1920,96 @@ class Maze:
                     world_z = 0.0  # Ground level
                     
                     # Generate deterministic random color based on cell position
+                    # Doom-style wall colors: dark grays, browns, and muted tones
                     seed_str = f"{cell_x}_{cell_y}"
                     seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
                     rng = random.Random(seed)
-                    # Generate color in a nice range (avoid too dark or too bright)
-                    base_r = rng.randint(40, 200)
-                    base_g = rng.randint(40, 200)
-                    base_b = rng.randint(40, 200)
+                    # Doom palette: dark grays (30-80), browns (40-100), muted tones
+                    # Create variation but keep it dark and moody
+                    base_r = rng.randint(30, 80)  # Dark red-brown tones
+                    base_g = rng.randint(25, 60)  # Muted greens
+                    base_b = rng.randint(20, 50)  # Dark blues
                     wall_color = (base_r, base_g, base_b)
                     
                     # Return as 3D box: (x, y, z, width, height, depth, color)
                     boxes.append((world_x, world_y, world_z, self.cell_size, wall_height, self.cell_size, wall_color))
         
         return boxes
+
+
+class GameOfLife:
+    """Conway's Game of Life for a single wall (100x100 grid)"""
+    
+    def __init__(self, seed: int = None):
+        import random
+        import numpy as np
+        
+        self.width = 100
+        self.height = 100
+        self.grid = np.zeros((self.height, self.width), dtype=bool)
+        self.frame_count = 0  # Track frames for deterministic gravity
+        
+        # Initialize with random pattern
+        if seed is not None:
+            rng = random.Random(seed)
+        else:
+            rng = random.Random()
+        
+        # Initialize with blood-dripping pattern (more cells at top, less at bottom)
+        # This creates a dripping effect that looks like blood on walls
+        for y in range(self.height):
+            for x in range(self.width):
+                # Higher probability at top (blood starts dripping from top)
+                # Probability decreases as we go down (gravity effect)
+                top_probability = 0.4  # 40% at top
+                bottom_probability = 0.1  # 10% at bottom
+                probability = top_probability - (top_probability - bottom_probability) * (y / self.height)
+                
+                # Add some randomness for natural blood patterns
+                if rng.random() < probability:
+                    self.grid[y, x] = True
+    
+    def update(self):
+        """Update the grid according to Conway's Game of Life rules (optimized with numpy)"""
+        import numpy as np
+        
+        # Optimized version using numpy vectorized operations
+        # Count neighbors using numpy roll operations (much faster than loops)
+        neighbor_count = np.zeros_like(self.grid, dtype=int)
+        
+        # Sum all 8 neighbors using numpy roll
+        for dy in [-1, 0, 1]:
+            for dx in [-1, 0, 1]:
+                if dx == 0 and dy == 0:
+                    continue
+                # Roll the grid and add to neighbor count
+                rolled = np.roll(np.roll(self.grid.astype(int), dy, axis=0), dx, axis=1)
+                neighbor_count += rolled
+        
+        # Apply Conway's rules using vectorized operations (much faster)
+        # Rule 1: Live cell with 2-3 neighbors survives
+        survives = (self.grid) & ((neighbor_count == 2) | (neighbor_count == 3))
+        # Rule 2: Dead cell with 3 neighbors becomes alive
+        born = (~self.grid) & (neighbor_count == 3)
+        
+        # Combine rules
+        new_grid = survives | born
+        
+        # Add gravity effect: cells tend to "fall" down (blood dripping effect)
+        # Shift cells down slightly to simulate dripping (simplified for performance)
+        gravity_shift = np.roll(new_grid, 1, axis=0)  # Shift down by 1
+        # Some cells fall down (blood dripping) - use deterministic pattern based on frame
+        # Use frame count to create time-based falling pattern (10% chance, changes over time)
+        self.frame_count += 1
+        fall_mask = ((np.arange(self.height * self.width).reshape(self.height, self.width) + self.frame_count) % 10) < 1
+        # Cells that fall replace empty cells below
+        new_grid = new_grid | (gravity_shift & fall_mask & ~new_grid)
+        
+        self.grid = new_grid
+    
+    def get_pattern(self) -> np.ndarray:
+        """Get the current grid pattern"""
+        return self.grid
 
 
 class PygameRenderer:
@@ -1925,6 +2027,12 @@ class PygameRenderer:
         self.clock = pygame.time.Clock()
         self.maze = maze
         self.mouse_captured = False  # Track mouse capture state
+        
+        # Single shared Game of Life instance for all walls
+        self.shared_game_of_life = GameOfLife(seed=42)  # Fixed seed so all walls use same pattern
+        self.game_of_life_update_counter = 0  # Update Game of Life every N frames
+        self.game_of_life_surface_cache = None  # Cache rendered pattern to avoid redrawing
+        self.game_of_life_cache_frame = -1  # Track when cache was created
         
         # Colors
         self.BLACK = (0, 0, 0)
@@ -2015,6 +2123,94 @@ class PygameRenderer:
         
         return (screen_x, screen_y)
     
+    def _render_game_of_life_on_face(self, face_points: List[Tuple[int, int]], game_of_life: 'GameOfLife', base_color: Tuple[int, int, int]):
+        """Render Conway's Game of Life pattern on a wall face (optimized)"""
+        if len(face_points) < 4:
+            return
+        
+        import numpy as np
+        
+        # Get bounding box of the face
+        xs = [p[0] for p in face_points]
+        ys = [p[1] for p in face_points]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        face_width = max_x - min_x
+        face_height = max_y - min_y
+        
+        # Skip rendering if face is too small or off-screen
+        if face_width < 10 or face_height < 10:
+            return
+        if max_x < 0 or min_x > self.width or max_y < 0 or min_y > self.height:
+            return  # Face is completely off-screen
+        
+        # Get Game of Life pattern
+        pattern = game_of_life.get_pattern()
+        gol_width = game_of_life.width
+        gol_height = game_of_life.height
+        
+        # Calculate cell size for rendering (skip if cells are too small)
+        cell_w = max(1, face_width // gol_width)
+        cell_h = max(1, face_height // gol_height)
+        
+        # Skip rendering if cells are too small (performance optimization)
+        if cell_w < 2 or cell_h < 2:
+            return  # Cells too small to render (increased threshold for performance)
+        
+        # Doom-style blood colors: dark red, blood red, dark brown
+        # Vary color based on position to create dripping/blood effect
+        
+        # Calculate visible range
+        start_x = max(0, (0 - min_x) // cell_w)
+        end_x = min(gol_width, ((self.width - min_x) // cell_w) + 1)
+        start_y = max(0, (0 - min_y) // cell_h)
+        end_y = min(gol_height, ((self.height - min_y) // cell_h) + 1)
+        
+        # Render only visible alive cells with Doom blood colors
+        # Skip every other cell if cells are small for performance
+        skip_cells = 1 if cell_w < 3 or cell_h < 3 else 0
+        
+        for y in range(start_y, end_y, 1 + skip_cells):
+            for x in range(start_x, end_x, 1 + skip_cells):
+                if pattern[y, x]:  # Cell is alive (blood)
+                    screen_x = min_x + (x * face_width) // gol_width
+                    screen_y = min_y + (y * face_height) // gol_height
+                    
+                    # Only draw if on screen
+                    if 0 <= screen_x < self.width and 0 <= screen_y < self.height:
+                        # Doom-style blood colors: vary intensity for dripping effect
+                        # Cells at top are brighter (fresh blood), cells at bottom are darker (dried blood)
+                        intensity = 1.0 - (y / gol_height) * 0.4  # Darker as we go down
+                        
+                        # Doom color palette: dark reds and browns
+                        # Base blood red: (139, 0, 0) to (178, 34, 34) to (101, 67, 33)
+                        blood_red = int(139 + (y / gol_height) * 39)  # 139-178 (bright to darker red)
+                        blood_green = int((y / gol_height) * 34)  # 0-34 (red to brown)
+                        blood_blue = int((y / gol_height) * 33)  # 0-33 (red to brown)
+                        
+                        # Simplified color calculation for performance (no expensive hash)
+                        # Use simple modulo for variation instead of MD5 hash
+                        variation = ((x * 7 + y * 11) % 31) - 15  # Deterministic variation
+                        
+                        # Doom blood red colors: bright red at top, dark brown/red at bottom
+                        blood_red = max(120, min(200, blood_red + variation))
+                        blood_green = max(0, min(60, blood_green + variation // 2))
+                        blood_blue = max(0, min(50, blood_blue + variation // 3))
+                        
+                        blood_color = (blood_red, blood_green, blood_blue)
+                        
+                        # Draw blood cell (Doom-style dripping blood)
+                        pygame.draw.rect(self.screen, blood_color, 
+                                       (screen_x, screen_y, cell_w, cell_h))
+                        
+                        # Add darker outline/shadow for depth (coagulated blood effect)
+                        # Only draw outline on larger cells for performance
+                        if cell_w > 3 and cell_h > 3:
+                            # Darker blood for outline (dried blood look)
+                            darker_blood = (max(80, blood_red - 40), max(0, blood_green - 15), max(0, blood_blue - 15))
+                            pygame.draw.rect(self.screen, darker_blood, 
+                                           (screen_x, screen_y, cell_w, cell_h), 1)
+    
     def _is_face_visible(self, face_points: List[Tuple[int, int]]) -> bool:
         """Check if a face is visible (simple back-face culling using winding order)"""
         if len(face_points) < 3:
@@ -2052,8 +2248,10 @@ class PygameRenderer:
         if self.maze:
             if fpv_mode:
                 # Render 3D walls in first-person view
-                wall_height = 100.0
-                wall_boxes = self.maze.get_wall_boxes_3d(camera_pos, view_distance=1000.0, wall_height=wall_height)
+                # Make walls actual cubes (all dimensions equal to cell_size)
+                wall_height = self.maze.cell_size  # Same as width and depth for perfect cubes
+                # Reduce view distance for better performance (only render nearby walls)
+                wall_boxes = self.maze.get_wall_boxes_3d(camera_pos, view_distance=300.0, wall_height=wall_height)
                 
                 # Sort walls by distance (back to front for proper rendering)
                 import math
@@ -2112,7 +2310,26 @@ class PygameRenderer:
                 # Sort by depth (farthest first, so closer walls render on top and occlude farther ones)
                 wall_depths.sort(key=lambda x: x[0], reverse=True)
                 
-                # Render each wall as a 3D box with random colors
+                # Limit number of walls rendered for performance (only render closest walls)
+                max_walls_to_render = 100  # Limit to 100 closest walls for better FPS
+                if len(wall_depths) > max_walls_to_render:
+                    wall_depths = wall_depths[:max_walls_to_render]
+                
+                # Limit number of walls rendered for performance (only render closest walls)
+                max_walls_to_render = 200  # Limit to 200 closest walls
+                if len(wall_depths) > max_walls_to_render:
+                    wall_depths = wall_depths[:max_walls_to_render]
+                
+                # Update shared Game of Life (every 10 frames for better performance)
+                self.game_of_life_update_counter += 1
+                if self.game_of_life_update_counter >= 10:
+                    self.game_of_life_update_counter = 0
+                    # Update the single shared Game of Life instance
+                    self.shared_game_of_life.update()
+                    # Invalidate cache when pattern changes
+                    self.game_of_life_surface_cache = None
+                
+                # Render each wall as a 3D box with random colors and Game of Life
                 for depth, box in wall_depths:
                     # Skip walls behind camera
                     if depth < 0:
@@ -2123,6 +2340,7 @@ class PygameRenderer:
                     else:
                         bx, by, bz, bw, bh, bd = box
                         wall_color = self.WALL_COLOR
+                    
                     # Get 8 corners of the box
                     corners = [
                         (bx, by, bz),  # Bottom front left
@@ -2244,6 +2462,16 @@ class PygameRenderer:
                     if front_facing and self._is_face_visible(front_face):
                         # Front face - use base color (solid, fully opaque)
                         pygame.draw.polygon(self.screen, wall_color, front_face)  # Solid fill
+                        
+                        # Render shared Game of Life pattern on front face (only if face is large enough and close)
+                        face_width = abs(screen_corners[1][0] - screen_corners[0][0])
+                        face_height = abs(screen_corners[4][1] - screen_corners[0][1])
+                        # Only render on larger, closer faces for performance
+                        if face_width > 40 and face_height > 40 and depth < 400:  # Only close, large faces
+                            self._render_game_of_life_on_face(
+                                front_face, self.shared_game_of_life, wall_color
+                            )
+                        
                         border_color = tuple(max(0, c - 30) for c in wall_color)
                         pygame.draw.polygon(self.screen, border_color, front_face, 1)
                     
@@ -2711,7 +2939,7 @@ def main():
     
     # Create many NPCs at different valid positions near the start
     # Performance optimized: can handle many NPCs with staggered pathfinding
-    MAX_NPCS = 50  # Increased from 5 to 50
+    MAX_NPCS = 25  # Reduced from 50 to 25 for better FPS with Game of Life rendering
     for i in range(MAX_NPCS):
         # Find a nearby path cell for NPC
         npc_offset = (i + 1) * 3  # Space NPCs out
