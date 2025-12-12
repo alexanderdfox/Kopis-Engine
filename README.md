@@ -38,7 +38,7 @@ pip install -r requirements.txt
 Run the engine:
 
 ```bash
-python sword.py
+python kopis-engine.py
 ```
 
 ## Features
@@ -56,7 +56,7 @@ python sword.py
 ### Example Usage
 
 ```python
-from sword import KopisEngine, GameEntity
+from kopis_engine import KopisEngine, GameEntity
 
 # Initialize engine
 engine = KopisEngine()
