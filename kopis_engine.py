@@ -2361,10 +2361,67 @@ class PygameRenderer:
                 horizon_y = half_height - math.tan(pitch_rad) * (self.height / 2)
                 
                 # Ceiling
-                pygame.draw.rect(self.screen, (26, 26, 26), (0, 0, self.width, max(0, int(horizon_y))))
+                ceiling_top = 0
+                ceiling_bottom = max(0, int(horizon_y))
+                pygame.draw.rect(self.screen, (26, 26, 26), (0, ceiling_top, self.width, ceiling_bottom - ceiling_top))
                 
                 # Floor
-                pygame.draw.rect(self.screen, (42, 42, 42), (0, min(self.height, int(horizon_y)), self.width, self.height))
+                floor_top = min(self.height, int(horizon_y))
+                floor_bottom = self.height
+                pygame.draw.rect(self.screen, (42, 42, 42), (0, floor_top, self.width, floor_bottom - floor_top))
+                
+                # Render Game of Life blood pattern on floor and ceiling
+                # Use same pattern as walls for consistency, but render every other cell for performance
+                if self.shared_game_of_life:
+                    pattern = self.shared_game_of_life.get_pattern()
+                    gol_height = self.shared_game_of_life.height
+                    gol_width = self.shared_game_of_life.width
+                    
+                    # Render blood on ceiling (inverted pattern - blood drips down)
+                    if ceiling_bottom > ceiling_top:
+                        ceiling_height = ceiling_bottom - ceiling_top
+                        cell_h = max(1, ceiling_height / gol_height)
+                        cell_w = max(1, self.width / gol_width)
+                        
+                        if cell_h >= 1 and cell_w >= 1:
+                            # Sample every other cell for performance (like walls)
+                            for y in range(0, gol_height, 2):
+                                for x in range(0, gol_width, 2):
+                                    if pattern[y, x]:
+                                        screen_x = int(x * self.width / gol_width)
+                                        screen_y = ceiling_top + int((gol_height - 1 - y) * ceiling_height / gol_height)  # Inverted for ceiling
+                                        if ceiling_top <= screen_y < ceiling_bottom and 0 <= screen_x < self.width:
+                                            variation = ((x * 7 + y * 11) % 31) - 15
+                                            # Ceiling blood: darker, more dried (inverted y for dripping effect)
+                                            blood_red = max(100, min(180, int(139 + ((gol_height - 1 - y) / gol_height) * 39 + variation)))
+                                            blood_green = max(0, min(60, int(((gol_height - 1 - y) / gol_height) * 34 + variation // 2)))
+                                            blood_blue = max(0, min(50, int(((gol_height - 1 - y) / gol_height) * 33 + variation // 3)))
+                                            
+                                            pygame.draw.rect(self.screen, (blood_red, blood_green, blood_blue),
+                                                           (screen_x, screen_y, max(1, int(cell_w * 2)), max(1, int(cell_h * 2))))
+                    
+                    # Render blood on floor
+                    if floor_bottom > floor_top:
+                        floor_height = floor_bottom - floor_top
+                        cell_h = max(1, floor_height / gol_height)
+                        cell_w = max(1, self.width / gol_width)
+                        
+                        if cell_h >= 1 and cell_w >= 1:
+                            # Sample every other cell for performance (like walls)
+                            for y in range(0, gol_height, 2):
+                                for x in range(0, gol_width, 2):
+                                    if pattern[y, x]:
+                                        screen_x = int(x * self.width / gol_width)
+                                        screen_y = floor_top + int(y * floor_height / gol_height)
+                                        if floor_top <= screen_y < floor_bottom and 0 <= screen_x < self.width:
+                                            variation = ((x * 7 + y * 11) % 31) - 15
+                                            # Floor blood: brighter at top (fresh), darker at bottom (dried)
+                                            blood_red = max(120, min(200, int(139 + (y / gol_height) * 39 + variation)))
+                                            blood_green = max(0, min(60, int((y / gol_height) * 34 + variation // 2)))
+                                            blood_blue = max(0, min(50, int((y / gol_height) * 33 + variation // 3)))
+                                            
+                                            pygame.draw.rect(self.screen, (blood_red, blood_green, blood_blue),
+                                                           (screen_x, screen_y, max(1, int(cell_w * 2)), max(1, int(cell_h * 2))))
                 
                 # Raycast for each column
                 cell_size = self.maze.cell_size
