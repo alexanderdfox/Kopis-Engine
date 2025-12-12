@@ -315,7 +315,8 @@
             motionTrails: new Map(),
             particles: [],
             gameOfLife: null, // Shared Game of Life instance
-            gameOfLifeUpdateCounter: 0
+            gameOfLifeUpdateCounter: 0,
+            rayResults: [] // Store raycast results for sprite rendering
         };
 
         // Sound Manager
@@ -534,6 +535,45 @@
             constructor() {
                 this.chunks = new Map();
                 this.lastCleanupPos = { x: 0, y: 0 };
+                this.cleanupCounter = 0; // Counter for periodic cleanup
+            }
+            
+            cleanupOldChunks(worldX, worldY, keepRadius = LOAD_RADIUS + 2) {
+                // Periodically clean up chunks that are far from player
+                this.cleanupCounter++;
+                if (this.cleanupCounter < 60) return; // Clean up every 60 frames
+                this.cleanupCounter = 0;
+                
+                const [centerX, centerY] = this.getChunkCoords(worldX, worldY);
+                const chunksToKeep = new Set();
+                
+                // Mark chunks to keep (within keepRadius)
+                for (let dx = -keepRadius; dx <= keepRadius; dx++) {
+                    for (let dy = -keepRadius; dy <= keepRadius; dy++) {
+                        const key = `${centerX + dx},${centerY + dy}`;
+                        chunksToKeep.add(key);
+                    }
+                }
+                
+                // Remove chunks that are too far away
+                const chunksToRemove = [];
+                for (const [key, chunk] of this.chunks.entries()) {
+                    if (!chunksToKeep.has(key)) {
+                        chunksToRemove.push(key);
+                    }
+                }
+                
+                // Remove old chunks to free memory
+                for (const key of chunksToRemove) {
+                    this.chunks.delete(key);
+                }
+                
+                if (chunksToRemove.length > 0) {
+                    // Force garbage collection hint (if available)
+                    if (window.gc) {
+                        window.gc();
+                    }
+                }
             }
 
             getChunkCoords(worldX, worldY) {
@@ -574,6 +614,8 @@
                         this.getOrCreateChunk(centerX + dx, centerY + dy);
                     }
                 }
+                // Periodically clean up old chunks to prevent memory growth
+                this.cleanupOldChunks(worldX, worldY);
             }
 
             checkCollision(x, y, radius) {
@@ -1311,15 +1353,19 @@
 
             game.canvas.addEventListener('mousedown', (e) => {
                 game.mouse.active = true;
-                // Capture mouse for FPV
+                // Capture mouse for FPV (Doom-style: click to capture mouse for camera control)
                 if (game.fpvMode && !game.mouseCaptured) {
                     game.canvas.requestPointerLock = game.canvas.requestPointerLock || 
                         game.canvas.mozRequestPointerLock || 
                         game.canvas.webkitRequestPointerLock;
                     if (game.canvas.requestPointerLock) {
-                        game.canvas.requestPointerLock();
+                        game.canvas.requestPointerLock().catch(err => {
+                            console.log('Pointer lock failed:', err);
+                        });
                     }
                 }
+                // Focus canvas for keyboard input
+                game.canvas.focus();
             });
             
             // ESC to release mouse
@@ -1424,12 +1470,33 @@
         }
 
         function update(deltaTime) {
-            // Update camera rotation from mouse (6DOF)
-            if (game.fpvMode && game.mouseCaptured) {
-                game.cameraYaw += game.mouse.dx * 0.1;
-                game.cameraPitch += game.mouse.dy * 0.1;
+            // Doom-style: Mouse movement controls camera rotation ONLY
+            // In FPV mode, mouse movement always rotates camera
+            if (game.fpvMode) {
+                if (game.mouseCaptured) {
+                    // Use pointer lock movement deltas (most accurate for Doom-style)
+                    const sensitivity = 0.15; // Doom-style mouse sensitivity
+                    game.cameraYaw += game.mouse.dx * sensitivity;
+                    game.cameraPitch += game.mouse.dy * sensitivity;
+                    // Reset deltas after use (pointer lock provides fresh deltas each frame)
+                    game.mouse.dx = 0;
+                    game.mouse.dy = 0;
+                } else if (game.mouse.active) {
+                    // When not captured, use relative movement from center
+                    const centerX = game.canvas.width / 2;
+                    const centerY = game.canvas.height / 2;
+                    const dx = game.mouse.x - centerX;
+                    const dy = game.mouse.y - centerY;
+                    // Only rotate if mouse moved significantly (avoid jitter)
+                    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                        const sensitivity = 0.2; // Slightly higher when not captured
+                        game.cameraYaw += dx * sensitivity;
+                        game.cameraPitch += dy * sensitivity;
+                    }
+                }
+                // Normalize angles
                 game.cameraYaw = game.cameraYaw % 360;
-                game.cameraPitch = game.cameraPitch % 360;
+                game.cameraPitch = Math.max(-90, Math.min(90, game.cameraPitch)); // Limit pitch to -90 to 90 degrees (Doom-style)
             }
             
             // Roll control with Q/E
@@ -1437,13 +1504,13 @@
             if (game.keys['e']) game.cameraRoll += 2.0;
             game.cameraRoll = game.cameraRoll % 360;
             
-            // Update mouse world coordinates based on current camera position
+            // Update mouse world coordinates (for UI display only, not movement)
             if (game.mouse.active) {
                 game.mouse.worldX = game.camera.x + (game.mouse.x - game.canvas.width / 2);
                 game.mouse.worldY = game.camera.y + (game.mouse.y - game.canvas.height / 2);
             }
 
-            // Update touch world coordinates based on current camera position
+            // Update touch world coordinates (for mobile devices)
             if (game.touch.active) {
                 game.touch.worldX = game.camera.x + (game.touch.x - game.canvas.width / 2);
                 game.touch.worldY = game.camera.y + (game.touch.y - game.canvas.height / 2);
@@ -1477,8 +1544,11 @@
                 vy = (forwardY * moveForward + rightY * moveRight) * PLAYER_SPEED;
             }
 
-            // Player input - Touch (for tablets/phones, highest priority)
-            if (game.touch.active) {
+            // Doom-style: Mouse only controls camera rotation, NOT player movement
+            // Player movement is controlled ONLY by WASD keys relative to camera direction
+            // Touch input for mobile devices (optional, only if not using keyboard)
+            if (game.touch.active && !game.keys['w'] && !game.keys['a'] && !game.keys['s'] && !game.keys['d']) {
+                // Only use touch if no keyboard input (for mobile devices)
                 const dx = game.touch.worldX - game.player.x;
                 const dy = game.touch.worldY - game.player.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1490,22 +1560,10 @@
                     vy = (dy / distance) * speed;
                 }
             }
-            // Player input - Mouse (moves towards cursor, overrides keyboard but not touch)
-            else if (game.mouse.active) {
-                const dx = game.mouse.worldX - game.player.x;
-                const dy = game.mouse.worldY - game.player.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                // Only move if mouse is far enough away (dead zone)
-                if (distance > 5) {
-                    const speed = Math.min(PLAYER_SPEED, distance * 2); // Faster when far, slower when close
-                    vx = (dx / distance) * speed;
-                    vy = (dy / distance) * speed;
-                }
-            }
+            // Mouse position does NOT control movement in Doom-style - only camera rotation
 
             // Normalize diagonal (only for keyboard input)
-            if (vx !== 0 && vy !== 0 && !game.mouse.active && !game.touch.active) {
+            if (vx !== 0 && vy !== 0 && !game.touch.active) {
                 vx *= 0.707;
                 vy *= 0.707;
             }
@@ -1585,8 +1643,11 @@
             // Play collision sound and particles if collision occurred
             if ((collisionX || collisionY) && wasMoving) {
                 soundManager.playCollision();
-                // Add collision particles
-                for (let i = 0; i < 5; i++) {
+                // Add collision particles (limit to prevent memory issues)
+                const MAX_PARTICLES = 200;
+                if (!game.particles) game.particles = [];
+                const particlesToAdd = Math.min(5, MAX_PARTICLES - game.particles.length);
+                for (let i = 0; i < particlesToAdd; i++) {
                     game.particles.push({
                         x: game.player.x,
                         y: game.player.y,
@@ -1822,7 +1883,8 @@
                 }
             }
 
-            // Update motion trails
+            // Update motion trails (with memory limits)
+            const MAX_TRAIL_LENGTH = 50; // Limit trail length to prevent memory growth
             game.entities.forEach(entity => {
                 if (!entity) return;
                 if (!entity.trail) entity.trail = [];
@@ -1836,16 +1898,23 @@
                         alpha: 1.0,
                         time: performance.now()
                     });
+                    // Limit trail length to prevent memory growth
+                    if (entity.trail.length > MAX_TRAIL_LENGTH) {
+                        entity.trail.shift(); // Remove oldest point
+                    }
                 }
-                // Remove old trail points
+                // Remove old trail points (cleanup expired points)
+                const now = performance.now();
                 entity.trail = entity.trail.filter(point => {
                     if (!point) return false;
                     point.alpha = (point.alpha || 1.0) - 0.05;
-                    return point.alpha > 0 && (performance.now() - (point.time || 0)) < 500;
+                    const age = now - (point.time || 0);
+                    return point.alpha > 0 && age < 500; // Remove after 500ms
                 });
             });
 
-            // Update particles
+            // Update particles (with memory limits)
+            const MAX_PARTICLES = 200; // Limit particle count to prevent memory growth
             if (!game.particles) game.particles = [];
             game.particles = game.particles.filter(particle => {
                 if (!particle) return false;
@@ -1855,6 +1924,10 @@
                 particle.life = (particle.life || 0.3) - deltaTime;
                 return particle.alpha > 0 && particle.life > 0;
             });
+            // Enforce particle limit (remove oldest if over limit)
+            if (game.particles.length > MAX_PARTICLES) {
+                game.particles = game.particles.slice(-MAX_PARTICLES); // Keep only newest particles
+            }
 
             // Update stats
             game.frame++;
@@ -2139,7 +2212,12 @@
                     }
                 }
                 
-                // Store ray results for sprite rendering
+                // Store ray results for sprite rendering (limit size to prevent memory growth)
+                // rayResults should be exactly canvas.width (one per column)
+                if (rayResults.length !== canvas.width) {
+                    // Resize to match canvas width (shouldn't happen, but safety check)
+                    rayResults = rayResults.slice(0, canvas.width);
+                }
                 game.rayResults = rayResults;
             } else {
                 // 2D fallback rendering
@@ -2394,15 +2472,30 @@
 
         function gameLoop() {
             const currentTime = performance.now();
-            let deltaTime = (currentTime - game.lastTime) / 1000;
+            const targetFPS = 60;
+            const targetFrameTime = 1000 / targetFPS; // 16.67ms per frame
             
-            // Cap delta time to prevent large jumps
-            deltaTime = Math.min(deltaTime, 0.1);
+            // Initialize lastTime if not set
+            if (game.lastTime === 0) {
+                game.lastTime = currentTime;
+            }
             
-            game.lastTime = currentTime;
+            // Calculate elapsed time
+            const elapsed = currentTime - game.lastTime;
+            
+            // Only update if enough time has passed (lock to 60 FPS)
+            if (elapsed >= targetFrameTime) {
+                let deltaTime = elapsed / 1000;
+                
+                // Cap delta time to prevent large jumps (handles tab switching, etc.)
+                deltaTime = Math.min(deltaTime, 0.1);
+                
+                // Update lastTime, preserving leftover time for smooth frame timing
+                game.lastTime = currentTime - (elapsed % targetFrameTime);
 
-            update(deltaTime);
-            render();
+                update(deltaTime);
+                render();
+            }
 
             requestAnimationFrame(gameLoop);
         }
