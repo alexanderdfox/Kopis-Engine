@@ -1407,21 +1407,115 @@
             });
 
             // Input handling - Mouse (with capture for FPV)
+            let lastMouseX = 0;
+            let lastMouseY = 0;
+            let virtualMouseX = 0;
+            let virtualMouseY = 0;
+            let isFirstMove = true;
+            const WRAP_THRESHOLD = 10; // Pixels from edge to trigger wrap
+            
             game.canvas.addEventListener('mousemove', (e) => {
                 const rect = game.canvas.getBoundingClientRect();
-                game.mouse.x = e.clientX - rect.left;
-                game.mouse.y = e.clientY - rect.top;
+                const realMouseX = e.clientX - rect.left;
+                const realMouseY = e.clientY - rect.top;
                 
-                // Use movementX/movementY from pointer lock for accurate delta
-                if (game.mouseCaptured && (e.movementX !== undefined || e.mozMovementX !== undefined)) {
-                    game.mouse.dx = e.movementX || e.mozMovementX || 0;
-                    game.mouse.dy = e.movementY || e.mozMovementY || 0;
-                } else if (!game.mouseCaptured) {
-                    // Calculate mouse delta for camera rotation when not captured
-                    const centerX = game.canvas.width / 2;
-                    const centerY = game.canvas.height / 2;
-                    game.mouse.dx = game.mouse.x - centerX;
-                    game.mouse.dy = game.mouse.y - centerY;
+                // Use movementX/movementY from pointer lock for accurate delta (preferred method)
+                if (game.mouseCaptured) {
+                    // Try all browser-specific movement properties
+                    const movementX = e.movementX !== undefined ? e.movementX : 
+                                    (e.mozMovementX !== undefined ? e.mozMovementX : 
+                                    (e.webkitMovementX !== undefined ? e.webkitMovementX : 0));
+                    const movementY = e.movementY !== undefined ? e.movementY : 
+                                    (e.mozMovementY !== undefined ? e.mozMovementY : 
+                                    (e.webkitMovementY !== undefined ? e.webkitMovementY : 0));
+                    
+                    game.mouse.dx = movementX;
+                    game.mouse.dy = movementY;
+                    game.mouse.x = realMouseX;
+                    game.mouse.y = realMouseY;
+                    virtualMouseX = realMouseX;
+                    virtualMouseY = realMouseY;
+                } else {
+                    // Mouse wrapping: use virtual mouse position that wraps around screen
+                    const canvasWidth = game.canvas.width;
+                    const canvasHeight = game.canvas.height;
+                    
+                    // Initialize virtual position on first move
+                    if (isFirstMove) {
+                        virtualMouseX = realMouseX;
+                        virtualMouseY = realMouseY;
+                        lastMouseX = realMouseX;
+                        lastMouseY = realMouseY;
+                        isFirstMove = false;
+                        game.mouse.dx = 0;
+                        game.mouse.dy = 0;
+                    } else {
+                        // Calculate movement delta
+                        let dx = realMouseX - lastMouseX;
+                        let dy = realMouseY - lastMouseY;
+                        
+                        // Detect wrapping by checking if movement is too large (likely wrapped)
+                        const maxNormalMovement = 50; // Max pixels in one frame for normal movement
+                        
+                        // Handle horizontal wrapping
+                        if (Math.abs(dx) > maxNormalMovement) {
+                            // Likely wrapped - calculate wrapped delta
+                            if (dx > 0) {
+                                // Wrapped from right edge to left edge
+                                dx = dx - canvasWidth;
+                            } else {
+                                // Wrapped from left edge to right edge
+                                dx = dx + canvasWidth;
+                            }
+                        }
+                        
+                        // Handle vertical wrapping
+                        if (Math.abs(dy) > maxNormalMovement) {
+                            // Likely wrapped - calculate wrapped delta
+                            if (dy > 0) {
+                                // Wrapped from bottom edge to top edge
+                                dy = dy - canvasHeight;
+                            } else {
+                                // Wrapped from top edge to bottom edge
+                                dy = dy + canvasHeight;
+                            }
+                        }
+                        
+                        // Update virtual mouse position with wrapping
+                        virtualMouseX += dx;
+                        virtualMouseY += dy;
+                        
+                        // Wrap virtual position to stay within canvas bounds
+                        while (virtualMouseX < 0) virtualMouseX += canvasWidth;
+                        while (virtualMouseX >= canvasWidth) virtualMouseX -= canvasWidth;
+                        while (virtualMouseY < 0) virtualMouseY += canvasHeight;
+                        while (virtualMouseY >= canvasHeight) virtualMouseY -= canvasHeight;
+                        
+                        // Also check if mouse is at edge and trigger wrap
+                        if (realMouseX <= WRAP_THRESHOLD && virtualMouseX > canvasWidth - WRAP_THRESHOLD) {
+                            virtualMouseX = WRAP_THRESHOLD;
+                        } else if (realMouseX >= canvasWidth - WRAP_THRESHOLD && virtualMouseX < WRAP_THRESHOLD) {
+                            virtualMouseX = canvasWidth - WRAP_THRESHOLD;
+                        }
+                        
+                        if (realMouseY <= WRAP_THRESHOLD && virtualMouseY > canvasHeight - WRAP_THRESHOLD) {
+                            virtualMouseY = WRAP_THRESHOLD;
+                        } else if (realMouseY >= canvasHeight - WRAP_THRESHOLD && virtualMouseY < WRAP_THRESHOLD) {
+                            virtualMouseY = canvasHeight - WRAP_THRESHOLD;
+                        }
+                        
+                        // Store deltas for camera rotation
+                        game.mouse.dx = dx;
+                        game.mouse.dy = dy;
+                    }
+                    
+                    // Update last known real mouse position
+                    lastMouseX = realMouseX;
+                    lastMouseY = realMouseY;
+                    
+                    // Use virtual position for game logic
+                    game.mouse.x = virtualMouseX;
+                    game.mouse.y = virtualMouseY;
                 }
                 
                 // Convert screen coordinates to world coordinates
@@ -1431,28 +1525,45 @@
             });
             
             // Pointer lock change handler
-            document.addEventListener('pointerlockchange', () => {
-                game.mouseCaptured = document.pointerLockElement === game.canvas;
-            });
+            const updatePointerLock = () => {
+                const isLocked = document.pointerLockElement === game.canvas ||
+                                document.mozPointerLockElement === game.canvas ||
+                                document.webkitPointerLockElement === game.canvas;
+                
+                if (game.mouseCaptured !== isLocked) {
+                    game.mouseCaptured = isLocked;
+                    // Reset mouse tracking when lock state changes
+                    if (isLocked) {
+                        isFirstMove = true;
+                        game.mouse.dx = 0;
+                        game.mouse.dy = 0;
+                    } else {
+                        // Reset last position when unlocking
+                        lastMouseX = game.mouse.x;
+                        lastMouseY = game.mouse.y;
+                        virtualMouseX = game.mouse.x;
+                        virtualMouseY = game.mouse.y;
+                    }
+                }
+            };
             
-            document.addEventListener('mozpointerlockchange', () => {
-                game.mouseCaptured = document.mozPointerLockElement === game.canvas;
-            });
-            
-            document.addEventListener('webkitpointerlockchange', () => {
-                game.mouseCaptured = document.webkitPointerLockElement === game.canvas;
-            });
+            document.addEventListener('pointerlockchange', updatePointerLock);
+            document.addEventListener('mozpointerlockchange', updatePointerLock);
+            document.addEventListener('webkitpointerlockchange', updatePointerLock);
 
             game.canvas.addEventListener('mousedown', (e) => {
                 game.mouse.active = true;
                 // Capture mouse for FPV (Doom-style: click to capture mouse for camera control)
                 if (game.fpvMode && !game.mouseCaptured) {
-                    game.canvas.requestPointerLock = game.canvas.requestPointerLock || 
+                    // Try all browser-specific pointer lock methods
+                    const requestPointerLock = game.canvas.requestPointerLock || 
                         game.canvas.mozRequestPointerLock || 
                         game.canvas.webkitRequestPointerLock;
-                    if (game.canvas.requestPointerLock) {
-                        game.canvas.requestPointerLock().catch(err => {
+                    if (requestPointerLock) {
+                        requestPointerLock.call(game.canvas).catch(err => {
                             console.log('Pointer lock failed:', err);
+                            // Fall back to non-captured mode
+                            game.mouseCaptured = false;
                         });
                     }
                 }
@@ -1478,6 +1589,24 @@
 
             game.canvas.addEventListener('mouseleave', (e) => {
                 game.mouse.active = false;
+                // Reset tracking when mouse leaves
+                isFirstMove = true;
+                game.mouse.dx = 0;
+                game.mouse.dy = 0;
+                virtualMouseX = game.mouse.x;
+                virtualMouseY = game.mouse.y;
+            });
+            
+            game.canvas.addEventListener('mouseenter', (e) => {
+                // Reset tracking when mouse enters
+                const rect = game.canvas.getBoundingClientRect();
+                const realMouseX = e.clientX - rect.left;
+                const realMouseY = e.clientY - rect.top;
+                isFirstMove = true;
+                lastMouseX = realMouseX;
+                lastMouseY = realMouseY;
+                virtualMouseX = realMouseX;
+                virtualMouseY = realMouseY;
             });
 
             // Input handling - Touch (for tablets and phones)
@@ -1568,23 +1697,24 @@
                 if (game.mouseCaptured) {
                     // Use pointer lock movement deltas (most accurate for Doom-style)
                     const sensitivity = 0.15; // Doom-style mouse sensitivity
-                    game.cameraYaw += game.mouse.dx * sensitivity;
-                    game.cameraPitch += game.mouse.dy * sensitivity;
+                    if (Math.abs(game.mouse.dx) > 0 || Math.abs(game.mouse.dy) > 0) {
+                        game.cameraYaw += game.mouse.dx * sensitivity;
+                        game.cameraPitch += game.mouse.dy * sensitivity;
+                    }
                     // Reset deltas after use (pointer lock provides fresh deltas each frame)
                     game.mouse.dx = 0;
                     game.mouse.dy = 0;
                 } else if (game.mouse.active) {
-                    // When not captured, use relative movement from center
-                    const centerX = game.canvas.width / 2;
-                    const centerY = game.canvas.height / 2;
-                    const dx = game.mouse.x - centerX;
-                    const dy = game.mouse.y - centerY;
+                    // When not captured, use relative movement deltas
+                    const sensitivity = 0.2; // Slightly higher when not captured
                     // Only rotate if mouse moved significantly (avoid jitter)
-                    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-                        const sensitivity = 0.2; // Slightly higher when not captured
-                        game.cameraYaw += dx * sensitivity;
-                        game.cameraPitch += dy * sensitivity;
+                    if (Math.abs(game.mouse.dx) > 0.5 || Math.abs(game.mouse.dy) > 0.5) {
+                        game.cameraYaw += game.mouse.dx * sensitivity;
+                        game.cameraPitch += game.mouse.dy * sensitivity;
                     }
+                    // Reset deltas after use
+                    game.mouse.dx = 0;
+                    game.mouse.dy = 0;
                 }
                 // Normalize angles
                 game.cameraYaw = game.cameraYaw % 360;
@@ -2158,6 +2288,90 @@
                 // Floor
                 ctx.fillStyle = '#2a2a2a';
                 ctx.fillRect(0, Math.min(canvas.height, horizonY), canvas.width, canvas.height);
+                
+                // Apply blood pattern to floor and ceiling
+                if (game.gameOfLife) {
+                    const pattern = game.gameOfLife.getPattern();
+                    const golHeight = game.gameOfLife.height;
+                    const golWidth = game.gameOfLife.width;
+                    const FLOOR_Z = 0;
+                    const CEILING_Z = CEILING_LEVEL;
+                    const SAMPLE_RATE = 2; // Sample every 2 pixels for performance
+                    
+                    // Render blood on floor and ceiling
+                    for (let x = 0; x < canvas.width; x += SAMPLE_RATE) {
+                        const cameraX = 2 * x / canvas.width - 1; // -1 to 1
+                        let rayDirX = forwardX + rightX * cameraX * Math.tan(FOV * Math.PI / 360);
+                        let rayDirY = forwardY + rightY * cameraX * Math.tan(FOV * Math.PI / 360);
+                        
+                        // Normalize ray direction
+                        const rayLength = Math.sqrt(rayDirX * rayDirX + rayDirY * rayDirY);
+                        rayDirX /= rayLength;
+                        rayDirY /= rayLength;
+                        
+                        // Render ceiling blood
+                        const ceilingEnd = Math.max(0, horizonY);
+                        for (let y = 0; y < ceilingEnd; y += SAMPLE_RATE) {
+                            // Calculate distance to ceiling at this screen position
+                            const p = (horizonY - y) / (canvas.height / 2);
+                            if (p > 0) {
+                                const distance = (CEILING_Z - camZ) / (p * Math.cos(pitchRad));
+                                
+                                if (distance > 0 && distance < 500) {
+                                    // Calculate world position
+                                    const worldX = camX + rayDirX * distance;
+                                    const worldY = camY + rayDirY * distance;
+                                    
+                                    // Map to pattern coordinates
+                                    const patternX = Math.floor((worldX / CELL_SIZE) % golWidth + golWidth) % golWidth;
+                                    const patternY = Math.floor((worldY / CELL_SIZE) % golHeight + golHeight) % golHeight;
+                                    
+                                    if (pattern[patternY] && pattern[patternY][patternX]) {
+                                        const variation = ((x * 7 + y * 11) % 31) - 15;
+                                        const bloodRed = Math.max(120, Math.min(200, 139 + (y / ceilingEnd) * 39 + variation));
+                                        const bloodGreen = Math.max(0, Math.min(60, (y / ceilingEnd) * 34 + Math.floor(variation / 2)));
+                                        const bloodBlue = Math.max(0, Math.min(50, (y / ceilingEnd) * 33 + Math.floor(variation / 3)));
+                                        
+                                        ctx.fillStyle = `rgb(${bloodRed}, ${bloodGreen}, ${bloodBlue})`;
+                                        ctx.fillRect(x, y, SAMPLE_RATE, SAMPLE_RATE);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Render floor blood
+                        const floorStart = Math.min(canvas.height, horizonY);
+                        const floorHeight = canvas.height - floorStart;
+                        for (let y = floorStart; y < canvas.height; y += SAMPLE_RATE) {
+                            // Calculate distance to floor at this screen position
+                            const p = (y - horizonY) / (canvas.height / 2);
+                            if (p > 0) {
+                                const distance = (camZ - FLOOR_Z) / (p * Math.cos(pitchRad));
+                                
+                                if (distance > 0 && distance < 500) {
+                                    // Calculate world position
+                                    const worldX = camX + rayDirX * distance;
+                                    const worldY = camY + rayDirY * distance;
+                                    
+                                    // Map to pattern coordinates
+                                    const patternX = Math.floor((worldX / CELL_SIZE) % golWidth + golWidth) % golWidth;
+                                    const patternY = Math.floor((worldY / CELL_SIZE) % golHeight + golHeight) % golHeight;
+                                    
+                                    if (pattern[patternY] && pattern[patternY][patternX]) {
+                                        const variation = ((x * 7 + y * 11) % 31) - 15;
+                                        const floorY = y - floorStart;
+                                        const bloodRed = Math.max(120, Math.min(200, 139 + (floorY / floorHeight) * 39 + variation));
+                                        const bloodGreen = Math.max(0, Math.min(60, (floorY / floorHeight) * 34 + Math.floor(variation / 2)));
+                                        const bloodBlue = Math.max(0, Math.min(50, (floorY / floorHeight) * 33 + Math.floor(variation / 3)));
+                                        
+                                        ctx.fillStyle = `rgb(${bloodRed}, ${bloodGreen}, ${bloodBlue})`;
+                                        ctx.fillRect(x, y, SAMPLE_RATE, SAMPLE_RATE);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 
                 // Raycast for each column
                 let rayResults = [];
