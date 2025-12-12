@@ -2478,24 +2478,27 @@
             // Initialize lastTime if not set
             if (game.lastTime === 0) {
                 game.lastTime = currentTime;
+                requestAnimationFrame(gameLoop);
+                return;
             }
             
             // Calculate elapsed time
-            const elapsed = currentTime - game.lastTime;
+            let elapsed = currentTime - game.lastTime;
             
-            // Only update if enough time has passed (lock to 60 FPS)
-            if (elapsed >= targetFrameTime) {
-                let deltaTime = elapsed / 1000;
-                
-                // Cap delta time to prevent large jumps (handles tab switching, etc.)
-                deltaTime = Math.min(deltaTime, 0.1);
-                
-                // Update lastTime, preserving leftover time for smooth frame timing
-                game.lastTime = currentTime - (elapsed % targetFrameTime);
-
-                update(deltaTime);
-                render();
-            }
+            // Cap elapsed time to prevent large jumps (handles tab switching, etc.)
+            elapsed = Math.min(elapsed, targetFrameTime * 2); // Max 2 frames worth
+            
+            // Use fixed timestep for consistent 60 FPS physics
+            const fixedDeltaTime = targetFrameTime / 1000; // 0.01667 seconds (60 FPS)
+            
+            // Always update with fixed timestep (ensures consistent 60 FPS simulation)
+            update(fixedDeltaTime);
+            
+            // Always render (smooth visual updates at display refresh rate)
+            render();
+            
+            // Update lastTime
+            game.lastTime = currentTime;
 
             requestAnimationFrame(gameLoop);
         }
