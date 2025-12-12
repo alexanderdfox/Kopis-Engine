@@ -1457,7 +1457,7 @@
             game.canvas.focus();
             game.canvas.addEventListener('click', () => game.canvas.focus());
 
-            // Start game loop
+            // Start game loop with forced 60 FPS
             game.lastTime = performance.now();
             gameLoop();
         }
@@ -2069,6 +2069,9 @@
                 
                 // Raycast for each column
                 let rayResults = [];
+                const wallsWithBlood = new Map(); // Track walls that should have blood pattern (mapX_mapY -> distance)
+                const MAX_BLOOD_WALLS = 10; // Only render blood on 10 closest walls
+                
                 for (let x = 0; x < canvas.width; x++) {
                     // Calculate ray angle (screen space to world space)
                     const cameraX = 2 * x / canvas.width - 1; // -1 to 1
@@ -2180,36 +2183,71 @@
                             x: x,
                             distance: distance,
                             wallStart: drawStart,
-                            wallEnd: drawEnd
+                            wallEnd: drawEnd,
+                            mapX: mapX,
+                            mapY: mapY
                         });
                         
-                        // Render Game of Life blood pattern on close walls
-                        if (distance < 200 && game.gameOfLife && x % 2 === 0) { // Every other column for performance
-                            const pattern = game.gameOfLife.getPattern();
-                            const golHeight = game.gameOfLife.height;
-                            const wallHeight = drawEnd - drawStart;
-                            const cellH = Math.max(1, wallHeight / golHeight);
-                            
-                            if (cellH >= 1) {
-                                for (let y = 0; y < golHeight; y++) {
-                                    if (pattern[y][Math.floor(x / canvas.width * game.gameOfLife.width)]) {
-                                        const screenY = drawStart + (y * wallHeight) / golHeight;
-                                        if (screenY >= drawStart && screenY < drawEnd) {
-                                            const variation = ((x * 7 + y * 11) % 31) - 15;
-                                            const bloodRed = Math.max(120, Math.min(200, 139 + (y / golHeight) * 39 + variation));
-                                            const bloodGreen = Math.max(0, Math.min(60, (y / golHeight) * 34 + Math.floor(variation / 2)));
-                                            const bloodBlue = Math.max(0, Math.min(50, (y / golHeight) * 33 + Math.floor(variation / 3)));
-                                            
-                                            ctx.fillStyle = `rgb(${bloodRed}, ${bloodGreen}, ${bloodBlue})`;
-                                            ctx.fillRect(x, screenY, 1, Math.max(1, cellH));
-                                        }
-                                    }
-                                }
+                        // Track walls for blood pattern (only close walls)
+                        if (distance < 200) {
+                            const wallKey = `${mapX}_${mapY}`;
+                            if (!wallsWithBlood.has(wallKey) || wallsWithBlood.get(wallKey) > distance) {
+                                wallsWithBlood.set(wallKey, distance);
                             }
                         }
                     } else {
                         rayResults.push({ x: x, distance: MAX_DEPTH, wallStart: 0, wallEnd: 0 });
                     }
+                }
+                
+                // Render blood pattern on only the 10 closest walls
+                if (game.gameOfLife && wallsWithBlood.size > 0) {
+                    // Sort walls by distance and take only the 10 closest
+                    const sortedWalls = Array.from(wallsWithBlood.entries())
+                        .map(([key, distance]) => {
+                            const [mapX, mapY] = key.split('_').map(Number);
+                            return { mapX, mapY, distance, key };
+                        })
+                        .sort((a, b) => a.distance - b.distance)
+                        .slice(0, MAX_BLOOD_WALLS);
+                    
+                    const bloodWallsSet = new Set(sortedWalls.map(w => w.key));
+                    
+                    // Render blood pattern on the selected walls
+                    rayResults.forEach(result => {
+                        if (result.mapX !== undefined && result.mapY !== undefined) {
+                            const wallKey = `${result.mapX}_${result.mapY}`;
+                            if (bloodWallsSet.has(wallKey) && result.distance < 200) {
+                                const wall = sortedWalls.find(w => w.key === wallKey);
+                                if (wall) {
+                                    // Render blood pattern on this wall column
+                                    const pattern = game.gameOfLife.getPattern();
+                                    const golHeight = game.gameOfLife.height;
+                                    const golWidth = game.gameOfLife.width;
+                                    const wallHeight = result.wallEnd - result.wallStart;
+                                    const cellH = Math.max(1, wallHeight / golHeight);
+                                    
+                                    if (cellH >= 1) {
+                                        const patternX = Math.floor(result.x / canvas.width * golWidth);
+                                        for (let y = 0; y < golHeight; y++) {
+                                            if (pattern[y] && pattern[y][patternX]) {
+                                                const screenY = result.wallStart + (y * wallHeight) / golHeight;
+                                                if (screenY >= result.wallStart && screenY < result.wallEnd) {
+                                                    const variation = ((result.x * 7 + y * 11) % 31) - 15;
+                                                    const bloodRed = Math.max(120, Math.min(200, 139 + (y / golHeight) * 39 + variation));
+                                                    const bloodGreen = Math.max(0, Math.min(60, (y / golHeight) * 34 + Math.floor(variation / 2)));
+                                                    const bloodBlue = Math.max(0, Math.min(50, (y / golHeight) * 33 + Math.floor(variation / 3)));
+                                                    
+                                                    ctx.fillStyle = `rgb(${bloodRed}, ${bloodGreen}, ${bloodBlue})`;
+                                                    ctx.fillRect(result.x, screenY, 1, Math.max(1, cellH));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
                 }
                 
                 // Store ray results for sprite rendering (limit size to prevent memory growth)
@@ -2471,35 +2509,36 @@
         }
 
         function gameLoop() {
-            const currentTime = performance.now();
             const targetFPS = 60;
             const targetFrameTime = 1000 / targetFPS; // 16.67ms per frame
+            const fixedDeltaTime = targetFrameTime / 1000; // 0.01667 seconds (60 FPS)
+            
+            const currentTime = performance.now();
             
             // Initialize lastTime if not set
             if (game.lastTime === 0) {
                 game.lastTime = currentTime;
-                requestAnimationFrame(gameLoop);
-                return;
             }
             
-            // Calculate elapsed time
+            // Calculate elapsed time since last frame
             let elapsed = currentTime - game.lastTime;
             
             // Cap elapsed time to prevent large jumps (handles tab switching, etc.)
             elapsed = Math.min(elapsed, targetFrameTime * 2); // Max 2 frames worth
             
-            // Use fixed timestep for consistent 60 FPS physics
-            const fixedDeltaTime = targetFrameTime / 1000; // 0.01667 seconds (60 FPS)
-            
-            // Always update with fixed timestep (ensures consistent 60 FPS simulation)
-            update(fixedDeltaTime);
-            
-            // Always render (smooth visual updates at display refresh rate)
-            render();
-            
-            // Update lastTime
-            game.lastTime = currentTime;
+            // Only update if enough time has passed (force 60 FPS)
+            if (elapsed >= targetFrameTime) {
+                // Update with fixed timestep (ensures consistent 60 FPS simulation)
+                update(fixedDeltaTime);
+                
+                // Render every update
+                render();
+                
+                // Update lastTime, preserving leftover time for smooth frame timing
+                game.lastTime = currentTime - (elapsed % targetFrameTime);
+            }
 
+            // Use requestAnimationFrame for smooth rendering (typically 60Hz)
             requestAnimationFrame(gameLoop);
         }
 
