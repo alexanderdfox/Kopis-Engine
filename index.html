@@ -565,6 +565,138 @@
                 return false;
             }
 
+            isPathCell(cellX, cellY) {
+                const [chunkX, chunkY] = this.getChunkCoords(cellX * CELL_SIZE, cellY * CELL_SIZE);
+                const chunk = this.getOrCreateChunk(chunkX, chunkY);
+                
+                const localX = ((cellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                const localY = ((cellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                
+                return chunk.paths.has(`${localX},${localY}`) && !chunk.walls.has(`${localX},${localY}`);
+            }
+
+            findNearestPathCell(worldX, worldY, searchRadius = 10) {
+                const startCellX = Math.floor(worldX / CELL_SIZE);
+                const startCellY = Math.floor(worldY / CELL_SIZE);
+                
+                // Search in expanding radius
+                for (let radius = 0; radius <= searchRadius; radius++) {
+                    for (let dx = -radius; dx <= radius; dx++) {
+                        for (let dy = -radius; dy <= radius; dy++) {
+                            if (Math.abs(dx) === radius || Math.abs(dy) === radius) {
+                                const testCellX = startCellX + dx;
+                                const testCellY = startCellY + dy;
+                                if (this.isPathCell(testCellX, testCellY)) {
+                                    return [testCellX, testCellY];
+                                }
+                            }
+                        }
+                    }
+                }
+                return null;
+            }
+
+            cellToWorld(cellX, cellY) {
+                return {
+                    x: cellX * CELL_SIZE + CELL_SIZE / 2,
+                    y: cellY * CELL_SIZE + CELL_SIZE / 2
+                };
+            }
+
+            heuristic(a, b) {
+                return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+            }
+
+            findPath(startWorldX, startWorldY, targetWorldX, targetWorldY, maxSearchRadius = 50) {
+                // Find nearest path cells
+                const startCell = this.findNearestPathCell(startWorldX, startWorldY, 5);
+                const targetCell = this.findNearestPathCell(targetWorldX, targetWorldY, 5);
+                
+                if (!startCell || !targetCell) {
+                    return null;
+                }
+                
+                // A* pathfinding
+                const openSet = [{ f: 0, cell: startCell }];
+                const cameFrom = new Map();
+                const gScore = new Map();
+                const fScore = new Map();
+                const closedSet = new Set();
+                
+                gScore.set(`${startCell[0]},${startCell[1]}`, 0);
+                fScore.set(`${startCell[0]},${startCell[1]}`, this.heuristic(startCell, targetCell));
+                
+                while (openSet.length > 0) {
+                    // Get cell with lowest f_score
+                    openSet.sort((a, b) => a.f - b.f);
+                    const current = openSet.shift();
+                    const currentKey = `${current.cell[0]},${current.cell[1]}`;
+                    
+                    if (closedSet.has(currentKey)) {
+                        continue;
+                    }
+                    
+                    closedSet.add(currentKey);
+                    
+                    // Check if we reached the target
+                    if (current.cell[0] === targetCell[0] && current.cell[1] === targetCell[1]) {
+                        // Reconstruct path
+                        const path = [];
+                        let currentPath = current.cell;
+                        while (cameFrom.has(`${currentPath[0]},${currentPath[1]}`)) {
+                            path.push(currentPath);
+                            currentPath = cameFrom.get(`${currentPath[0]},${currentPath[1]}`);
+                        }
+                        path.push(startCell);
+                        path.reverse();
+                        return path;
+                    }
+                    
+                    // Check neighbors (4-directional)
+                    for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                        const neighbor = [current.cell[0] + dx, current.cell[1] + dy];
+                        const neighborKey = `${neighbor[0]},${neighbor[1]}`;
+                        
+                        // Check if neighbor is valid path cell
+                        if (!this.isPathCell(neighbor[0], neighbor[1])) {
+                            continue;
+                        }
+                        
+                        // Check if we've searched too far
+                        const distFromStart = Math.abs(neighbor[0] - startCell[0]) + Math.abs(neighbor[1] - startCell[1]);
+                        if (distFromStart > maxSearchRadius) {
+                            continue;
+                        }
+                        
+                        if (closedSet.has(neighborKey)) {
+                            continue;
+                        }
+                        
+                        const tentativeG = (gScore.get(currentKey) || Infinity) + 1;
+                        
+                        if (tentativeG < (gScore.get(neighborKey) || Infinity)) {
+                            cameFrom.set(neighborKey, current.cell);
+                            gScore.set(neighborKey, tentativeG);
+                            const h = this.heuristic(neighbor, targetCell);
+                            const f = tentativeG + h;
+                            fScore.set(neighborKey, f);
+                            
+                            // Check if already in open set
+                            const inOpenSet = openSet.find(item => 
+                                item.cell[0] === neighbor[0] && item.cell[1] === neighbor[1]
+                            );
+                            if (!inOpenSet) {
+                                openSet.push({ f: f, cell: neighbor });
+                            } else {
+                                inOpenSet.f = f;
+                            }
+                        }
+                    }
+                }
+                
+                return null; // No path found
+            }
+
             getWallRects(cameraX, cameraY, viewportWidth, viewportHeight) {
                 this.ensureChunksLoaded(cameraX, cameraY);
                 const rects = [];
@@ -710,9 +842,10 @@
 
             game.entities.push(game.player);
 
-            // Create NPCs at valid positions
+            // Create NPCs at valid positions - OPTIMIZED for many NPCs
             let npcCount = 0;
-            for (let i = 0; i < 10 && npcCount < 5; i++) {
+            const MAX_NPCS = 50; // Increased from 5 to 50
+            for (let i = 0; i < 100 && npcCount < MAX_NPCS; i++) {
                 const npcX = game.player.x + (i + 1) * 3 * CELL_SIZE;
                 const npcY = game.player.y + (i % 2 === 0 ? 1 : -1) * CELL_SIZE;
                 
@@ -729,7 +862,10 @@
                         lastX: npcX,
                         lastY: npcY,
                         trail: [],
-                        initialized: true
+                        initialized: true,
+                        path: null,  // Pathfinding path
+                        pathIndex: 0,  // Current waypoint index
+                        lastPathUpdate: 0  // Last time path was calculated
                     });
                     npcCount++;
                 }
@@ -882,40 +1018,182 @@
                 }
             }
 
-            // Update NPCs
+            // Update NPCs with pathfinding - OPTIMIZED for performance
+            // Performance optimization: only update NPCs within reasonable distance
+            const MAX_UPDATE_DISTANCE = 2000; // Only update NPCs within 2000 pixels
+            const PATHFINDING_BATCH_SIZE = 3; // Update max 3 NPCs' paths per frame
+            
+            // Initialize frame counter for staggering
+            if (game.pathfindingFrameCount === undefined) game.pathfindingFrameCount = 0;
+            game.pathfindingFrameCount++;
+            
+            // Collect NPCs to update
+            const npcsToUpdate = [];
             game.entities.forEach(entity => {
                 if (entity.id !== 'player' && entity.id.startsWith('npc')) {
-                    const dx = game.player.x - entity.x;
-                    const dy = game.player.y - entity.y;
+                    // Distance-based culling
+                    const dx = entity.x - game.player.x;
+                    const dy = entity.y - game.player.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
-
-                    if (distance > 0) {
-                        const vx = (dx / distance) * NPC_SPEED;
-                        const vy = (dy / distance) * NPC_SPEED;
-                        entity.vx = vx;
-                        entity.vy = vy;
-
-                        const newX = entity.x + vx * deltaTime;
-                        const newY = entity.y + vy * deltaTime;
-
-                        // Check X movement
-                        if (!game.maze.checkCollision(newX, entity.y, NPC_RADIUS)) {
-                            entity.x = newX;
-                        } else {
-                            entity.vx = 0;
+                    
+                    if (distance <= MAX_UPDATE_DISTANCE) {
+                        npcsToUpdate.push({ entity, distance });
+                    }
+                }
+            });
+            
+            // Sort by distance (closest first) for priority pathfinding
+            npcsToUpdate.sort((a, b) => a.distance - b.distance);
+            
+            // Stagger pathfinding: only update a few NPCs per frame
+            let pathfindingCount = 0;
+            
+            npcsToUpdate.forEach(({ entity, distance }) => {
+                // Initialize pathfinding properties if not present
+                if (entity.path === undefined) entity.path = null;
+                if (entity.pathIndex === undefined) entity.pathIndex = 0;
+                if (entity.lastPathUpdate === undefined) entity.lastPathUpdate = 0;
+                if (entity.pathfindingFrame === undefined) entity.pathfindingFrame = -1;
+                
+                const currentTime = performance.now() / 1000; // Convert to seconds
+                
+                // Update path less frequently and stagger across frames
+                let updatePath = false;
+                if (!entity.path || entity.path.length === 0) {
+                    // Only update if we haven't exceeded batch size
+                    if (pathfindingCount < PATHFINDING_BATCH_SIZE) {
+                        updatePath = true;
+                        pathfindingCount++;
+                    }
+                } else if (entity.pathIndex >= entity.path.length) {
+                    if (pathfindingCount < PATHFINDING_BATCH_SIZE) {
+                        updatePath = true;
+                        pathfindingCount++;
+                    }
+                } else if (currentTime - entity.lastPathUpdate > 3.0) { // Increased to 3 seconds
+                    // Stagger pathfinding updates across frames
+                    if (entity.pathfindingFrame < 0 || 
+                        (game.pathfindingFrameCount - entity.pathfindingFrame) % Math.max(1, Math.floor(npcsToUpdate.length / PATHFINDING_BATCH_SIZE)) === 0) {
+                        if (pathfindingCount < PATHFINDING_BATCH_SIZE) {
+                            updatePath = true;
+                            pathfindingCount++;
+                            entity.pathfindingFrame = game.pathfindingFrameCount;
                         }
-
-                        // Check Y movement
-                        if (!game.maze.checkCollision(entity.x, newY, NPC_RADIUS)) {
+                    }
+                }
+                
+                // Calculate path if needed (with distance-based search radius)
+                if (updatePath) {
+                    // Adaptive search radius based on distance
+                    const searchRadius = Math.min(50, Math.max(20, Math.floor(distance / 100)));
+                    const path = game.maze.findPath(entity.x, entity.y, game.player.x, game.player.y, searchRadius);
+                    if (path) {
+                        entity.path = path;
+                        entity.pathIndex = 0;
+                        entity.lastPathUpdate = currentTime;
+                    } else {
+                        // No path found, clear path
+                        entity.path = null;
+                    }
+                }
+                
+                // Move along path
+                if (entity.path && entity.path.length > 0 && entity.pathIndex < entity.path.length) {
+                        // Get current target waypoint
+                        const targetCell = entity.path[entity.pathIndex];
+                        const targetWorld = game.maze.cellToWorld(targetCell[0], targetCell[1]);
+                        
+                        // Calculate direction to waypoint
+                        let dx = targetWorld.x - entity.x;
+                        let dy = targetWorld.y - entity.y;
+                        let distanceToWaypoint = Math.sqrt(dx * dx + dy * dy);
+                        
+                        // If close enough to waypoint, move to next one
+                        if (distanceToWaypoint < CELL_SIZE * 0.3) {
+                            entity.pathIndex++;
+                            if (entity.pathIndex < entity.path.length) {
+                                const nextCell = entity.path[entity.pathIndex];
+                                const nextWorld = game.maze.cellToWorld(nextCell[0], nextCell[1]);
+                                dx = nextWorld.x - entity.x;
+                                dy = nextWorld.y - entity.y;
+                                distanceToWaypoint = Math.sqrt(dx * dx + dy * dy);
+                            }
+                        }
+                        
+                        if (distanceToWaypoint > 0.1) {
+                            // Calculate velocity towards waypoint
+                            const vx = (dx / distanceToWaypoint) * NPC_SPEED;
+                            const vy = (dy / distanceToWaypoint) * NPC_SPEED;
+                            entity.vx = vx;
+                            entity.vy = vy;
+                            
+                            // Update position
+                            let newX = entity.x + vx * deltaTime;
+                            let newY = entity.y + vy * deltaTime;
+                            
+                            // Check collision and adjust
+                            if (game.maze.checkCollision(newX, newY, NPC_RADIUS)) {
+                                // Try moving only X
+                                if (!game.maze.checkCollision(newX, entity.y, NPC_RADIUS)) {
+                                    newY = entity.y;
+                                }
+                                // Try moving only Y
+                                else if (!game.maze.checkCollision(entity.x, newY, NPC_RADIUS)) {
+                                    newX = entity.x;
+                                }
+                                else {
+                                    // Can't move, stay in place and recalculate path
+                                    newX = entity.x;
+                                    newY = entity.y;
+                                    entity.vx = 0;
+                                    entity.vy = 0;
+                                    entity.path = null; // Force path recalculation
+                                }
+                            }
+                            
+                            entity.x = newX;
                             entity.y = newY;
                         } else {
+                            // Already at waypoint
+                            entity.vx = 0;
                             entity.vy = 0;
                         }
                     } else {
-                        entity.vx = 0;
-                        entity.vy = 0;
+                        // No path or path exhausted, use simple fallback movement
+                        const dx = game.player.x - entity.x;
+                        const dy = game.player.y - entity.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance > 0) {
+                            const vx = (dx / distance) * NPC_SPEED;
+                            const vy = (dy / distance) * NPC_SPEED;
+                            entity.vx = vx;
+                            entity.vy = vy;
+                            
+                            let newX = entity.x + vx * deltaTime;
+                            let newY = entity.y + vy * deltaTime;
+                            
+                            // Check collision
+                            if (game.maze.checkCollision(newX, newY, NPC_RADIUS)) {
+                                if (!game.maze.checkCollision(newX, entity.y, NPC_RADIUS)) {
+                                    newY = entity.y;
+                                } else if (!game.maze.checkCollision(entity.x, newY, NPC_RADIUS)) {
+                                    newX = entity.x;
+                                } else {
+                                    newX = entity.x;
+                                    newY = entity.y;
+                                    entity.vx = 0;
+                                    entity.vy = 0;
+                                }
+                            }
+                            
+                            entity.x = newX;
+                            entity.y = newY;
+                        } else {
+                            entity.vx = 0;
+                            entity.vy = 0;
+                        }
                     }
-                }
             });
 
             // Store previous positions for trails

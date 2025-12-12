@@ -315,31 +315,132 @@ class ParallelBranches:
     
     def process_ai(self, entities: List[GameEntity], player_entity: GameEntity, delta_time: float, maze: Optional['Maze'] = None) -> List[GameEntity]:
         """
-        Process AI/NPC behavior - automatic movement
-        NPCs automatically move towards the player, avoiding maze walls
+        Process AI/NPC behavior - automatic movement with pathfinding
+        NPCs use A* pathfinding to navigate through the maze towards the player
+        Optimized for performance: staggered pathfinding updates and distance-based culling
         """
         updated_entities = []
+        
+        # Get frame count for staggering pathfinding updates
+        frame_count = getattr(self, '_ai_frame_count', 0)
+        self._ai_frame_count = frame_count + 1
+        
+        # Performance optimization: only update NPCs within reasonable distance
+        MAX_UPDATE_DISTANCE = 2000.0  # Only update NPCs within 2000 pixels
+        PATHFINDING_BATCH_SIZE = 3  # Update max 3 NPCs' paths per frame
+        
+        npcs_to_update = []
         for entity in entities:
             if entity.id != player_entity.id and 'npc' in entity.id:
-                # Simple AI: move towards player
-                dx = player_entity.position[0] - entity.position[0]
-                dy = player_entity.position[1] - entity.position[1]
+                # Distance-based culling
+                dx = entity.position[0] - player_entity.position[0]
+                dy = entity.position[1] - player_entity.position[1]
                 distance = np.sqrt(dx**2 + dy**2)
                 
-                if distance > 0:
-                    speed = 50.0  # pixels per second
-                    # Calculate velocity based on direction and speed
-                    vx = (dx / distance) * speed
-                    vy = (dy / distance) * speed
+                if distance > MAX_UPDATE_DISTANCE:
+                    # Too far, skip update (keep current state)
+                    updated_entities.append(entity)
+                    continue
+                
+                npcs_to_update.append((entity, distance))
+            else:
+                # Keep non-NPC entities unchanged (player, etc.)
+                updated_entities.append(entity)
+        
+        # Sort by distance (closest first) for priority pathfinding
+        npcs_to_update.sort(key=lambda x: x[1])
+        
+        # Stagger pathfinding: only update a few NPCs per frame
+        pathfinding_count = 0
+        
+        for entity, distance in npcs_to_update:
+            if not maze:
+                # No maze, use simple movement
+                updated_entities.append(entity)
+                continue
+            
+            entity_radius = entity.properties.get('radius', 8.0)
+            speed = 50.0  # pixels per second
+            
+            # Get or initialize pathfinding state
+            path = entity.properties.get('path', None)
+            path_index = entity.properties.get('path_index', 0)
+            last_path_update = entity.properties.get('last_path_update', 0.0)
+            pathfinding_frame = entity.properties.get('pathfinding_frame', -1)
+            current_time = time.time()
+            
+            # Update path less frequently and stagger across frames
+            update_path = False
+            if path is None or len(path) == 0:
+                # Only update if we haven't exceeded batch size
+                if pathfinding_count < PATHFINDING_BATCH_SIZE:
+                    update_path = True
+                    pathfinding_count += 1
+            elif path_index >= len(path):
+                if pathfinding_count < PATHFINDING_BATCH_SIZE:
+                    update_path = True
+                    pathfinding_count += 1
+            elif current_time - last_path_update > 3.0:  # Increased to 3 seconds
+                # Stagger pathfinding updates across frames
+                if pathfinding_frame < 0 or (frame_count - pathfinding_frame) % max(1, len(npcs_to_update) // PATHFINDING_BATCH_SIZE) == 0:
+                    if pathfinding_count < PATHFINDING_BATCH_SIZE:
+                        update_path = True
+                        pathfinding_count += 1
+                        entity.properties['pathfinding_frame'] = frame_count
+            
+            # Calculate path if needed (with distance-based search radius)
+            if update_path:
+                # Adaptive search radius based on distance
+                search_radius = min(50, max(20, int(distance / 100)))
+                path = maze.find_path(entity.position, player_entity.position, max_search_radius=search_radius)
+                if path:
+                    path_index = 0
+                    entity.properties['path'] = path
+                    entity.properties['path_index'] = 0
+                    entity.properties['last_path_update'] = current_time
+                else:
+                    # No path found, try simple movement as fallback
+                    path = None
+                    entity.properties['path'] = None
+            
+            # Get current path from properties (may have been updated above)
+            path = entity.properties.get('path', None)
+            path_index = entity.properties.get('path_index', 0)
+            
+            # Move along path (NPCs move every frame, not just when path is updated)
+            if path and path_index < len(path):
+                # Get current target waypoint
+                target_cell = path[path_index]
+                target_world = maze.cell_to_world(target_cell)
+                
+                # Calculate direction to waypoint
+                dx = target_world[0] - entity.position[0]
+                dy = target_world[1] - entity.position[1]
+                distance_to_waypoint = np.sqrt(dx**2 + dy**2)
+                
+                # If close enough to waypoint, move to next one
+                if distance_to_waypoint < maze.cell_size * 0.3:  # Within 30% of cell size
+                    path_index += 1
+                    if path_index < len(path):
+                        target_cell = path[path_index]
+                        target_world = maze.cell_to_world(target_cell)
+                        dx = target_world[0] - entity.position[0]
+                        dy = target_world[1] - entity.position[1]
+                        distance_to_waypoint = np.sqrt(dx**2 + dy**2)
+                    # Update path_index in properties
+                    entity.properties['path_index'] = path_index
+                
+                if distance_to_waypoint > 0.1:
+                    # Calculate velocity towards waypoint
+                    vx = (dx / distance_to_waypoint) * speed
+                    vy = (dy / distance_to_waypoint) * speed
                     
-                    # Update position based on velocity
+                    # Update position
                     new_x = entity.position[0] + vx * delta_time
                     new_y = entity.position[1] + vy * delta_time
                     
-                    # Check maze collision for NPCs
-                    entity_radius = entity.properties.get('radius', 8.0)
-                    if maze and maze.check_collision((new_x, new_y), entity_radius):
-                        # Try alternative paths if collision detected
+                    # Check collision and adjust
+                    if maze.check_collision((new_x, new_y), entity_radius):
                         # Try moving only X
                         if not maze.check_collision((new_x, entity.position[1]), entity_radius):
                             new_y = entity.position[1]
@@ -347,24 +448,65 @@ class ParallelBranches:
                         elif not maze.check_collision((entity.position[0], new_y), entity_radius):
                             new_x = entity.position[0]
                         else:
-                            # Can't move, stay in place
+                            # Can't move, stay in place and recalculate path
                             new_x = entity.position[0]
                             new_y = entity.position[1]
-                    
-                    updated_entities.append(GameEntity(
-                        id=entity.id,
-                        position=(new_x, new_y),
-                        velocity=(vx, vy),
-                        health=entity.health,
-                        description=entity.description,
-                        properties=entity.properties
-                    ))
+                            vx = 0
+                            vy = 0
+                            entity.properties['path'] = None  # Force path recalculation
                 else:
-                    # Already at player position, keep current state
-                    updated_entities.append(entity)
+                    # Already at waypoint
+                    new_x = entity.position[0]
+                    new_y = entity.position[1]
+                    vx = 0
+                    vy = 0
             else:
-                # Keep player and non-NPC entities unchanged
-                updated_entities.append(entity)
+                # No path or path exhausted, use simple fallback movement
+                dx = player_entity.position[0] - entity.position[0]
+                dy = player_entity.position[1] - entity.position[1]
+                distance = np.sqrt(dx**2 + dy**2)
+                
+                if distance > 0:
+                    vx = (dx / distance) * speed
+                    vy = (dy / distance) * speed
+                    
+                    new_x = entity.position[0] + vx * delta_time
+                    new_y = entity.position[1] + vy * delta_time
+                    
+                    # Check collision
+                    if maze.check_collision((new_x, new_y), entity_radius):
+                        if not maze.check_collision((new_x, entity.position[1]), entity_radius):
+                            new_y = entity.position[1]
+                        elif not maze.check_collision((entity.position[0], new_y), entity_radius):
+                            new_x = entity.position[0]
+                        else:
+                            new_x = entity.position[0]
+                            new_y = entity.position[1]
+                            vx = 0
+                            vy = 0
+                else:
+                    new_x = entity.position[0]
+                    new_y = entity.position[1]
+                    vx = 0
+                    vy = 0
+            
+            # Create updated entity with all pathfinding properties preserved
+            updated_properties = entity.properties.copy()
+            # Ensure pathfinding state is preserved
+            updated_properties['path'] = entity.properties.get('path', None)
+            updated_properties['path_index'] = entity.properties.get('path_index', 0)
+            updated_properties['last_path_update'] = entity.properties.get('last_path_update', 0.0)
+            if 'pathfinding_frame' in entity.properties:
+                updated_properties['pathfinding_frame'] = entity.properties['pathfinding_frame']
+            
+            updated_entities.append(GameEntity(
+                id=entity.id,
+                position=(new_x, new_y),
+                velocity=(vx, vy),
+                health=entity.health,
+                description=entity.description,
+                properties=updated_properties
+            ))
         return updated_entities
     
     def process_parallel(self, signal: Signal, game_data: Dict[str, Any]) -> Dict[str, Signal]:
@@ -1254,6 +1396,114 @@ class Maze:
                         return True
         return False
     
+    def is_path_cell(self, cell_pos: Tuple[int, int]) -> bool:
+        """Check if a cell is a path (not a wall)"""
+        cell_x, cell_y = cell_pos
+        
+        # Get chunk for this cell
+        chunk_x = cell_x // self.chunk_size
+        chunk_y = cell_y // self.chunk_size
+        if cell_x < 0:
+            chunk_x = (cell_x - self.chunk_size + 1) // self.chunk_size
+        if cell_y < 0:
+            chunk_y = (cell_y - self.chunk_size + 1) // self.chunk_size
+        
+        chunk = self._get_or_create_chunk(chunk_x, chunk_y)
+        
+        # Convert to local chunk coordinates
+        local_x = cell_x % self.chunk_size
+        local_y = cell_y % self.chunk_size
+        if cell_x < 0:
+            local_x = (cell_x % self.chunk_size + self.chunk_size) % self.chunk_size
+        if cell_y < 0:
+            local_y = (cell_y % self.chunk_size + self.chunk_size) % self.chunk_size
+        
+        return (local_x, local_y) in chunk.paths and (local_x, local_y) not in chunk.walls
+    
+    def find_nearest_path_cell(self, world_pos: Tuple[float, float], search_radius: int = 10) -> Optional[Tuple[int, int]]:
+        """Find the nearest path cell to a world position"""
+        start_cell = self.world_to_cell(world_pos)
+        
+        # Search in expanding radius
+        for radius in range(search_radius + 1):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    if abs(dx) == radius or abs(dy) == radius:  # Only check perimeter
+                        test_cell = (start_cell[0] + dx, start_cell[1] + dy)
+                        if self.is_path_cell(test_cell):
+                            return test_cell
+        return None
+    
+    def find_path(self, start_world: Tuple[float, float], target_world: Tuple[float, float], max_search_radius: int = 50) -> Optional[List[Tuple[int, int]]]:
+        """
+        Find a path from start to target using A* pathfinding
+        Returns a list of cell coordinates, or None if no path found
+        """
+        # Find nearest path cells
+        start_cell = self.find_nearest_path_cell(start_world, search_radius=5)
+        target_cell = self.find_nearest_path_cell(target_world, search_radius=5)
+        
+        if not start_cell or not target_cell:
+            return None
+        
+        # A* pathfinding
+        open_set = [(0, start_cell)]  # (f_score, cell)
+        came_from = {}
+        g_score = {start_cell: 0}
+        f_score = {start_cell: self._heuristic(start_cell, target_cell)}
+        closed_set = set()
+        
+        while open_set:
+            # Get cell with lowest f_score
+            open_set.sort(key=lambda x: x[0])
+            current_f, current = open_set.pop(0)
+            
+            if current in closed_set:
+                continue
+            
+            closed_set.add(current)
+            
+            # Check if we reached the target
+            if current == target_cell:
+                # Reconstruct path
+                path = []
+                while current in came_from:
+                    path.append(current)
+                    current = came_from[current]
+                path.append(start_cell)
+                path.reverse()
+                return path
+            
+            # Check neighbors (4-directional)
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                neighbor = (current[0] + dx, current[1] + dy)
+                
+                # Check if neighbor is valid path cell
+                if not self.is_path_cell(neighbor):
+                    continue
+                
+                # Check if we've searched too far
+                dist_from_start = abs(neighbor[0] - start_cell[0]) + abs(neighbor[1] - start_cell[1])
+                if dist_from_start > max_search_radius:
+                    continue
+                
+                tentative_g = g_score.get(current, float('inf')) + 1
+                
+                if neighbor in closed_set:
+                    continue
+                
+                if tentative_g < g_score.get(neighbor, float('inf')):
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g
+                    f_score[neighbor] = tentative_g + self._heuristic(neighbor, target_cell)
+                    open_set.append((f_score[neighbor], neighbor))
+        
+        return None  # No path found
+    
+    def _heuristic(self, a: Tuple[int, int], b: Tuple[int, int]) -> float:
+        """Manhattan distance heuristic for A*"""
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+    
     def get_wall_rects(self, camera_pos: Tuple[float, float], viewport_width: float, viewport_height: float) -> List[Tuple[float, float, float, float]]:
         """Get wall rectangles visible in viewport"""
         # Ensure chunks are loaded around camera
@@ -1616,8 +1866,10 @@ def main():
     )
     engine.add_entity(player)
     
-    # Create some NPCs at different valid positions near the start
-    for i in range(5):
+    # Create many NPCs at different valid positions near the start
+    # Performance optimized: can handle many NPCs with staggered pathfinding
+    MAX_NPCS = 50  # Increased from 5 to 50
+    for i in range(MAX_NPCS):
         # Find a nearby path cell for NPC
         npc_offset = (i + 1) * 3  # Space NPCs out
         npc_cell = (start_cell[0] + npc_offset, start_cell[1])
@@ -1672,7 +1924,10 @@ def main():
             description=f"NPC {i+1}",
             properties={
                 'affected_by_gravity': False,  # NPCs not affected by gravity
-                'radius': 8.0  # NPC collision radius
+                'radius': 8.0,  # NPC collision radius
+                'path': None,  # Pathfinding path
+                'path_index': 0,  # Current waypoint index
+                'last_path_update': 0.0  # Last time path was calculated
             }
         )
         engine.add_entity(npc)
