@@ -1519,55 +1519,88 @@ def main():
     # Initialize pygame renderer with maze
     renderer = PygameRenderer(width=800, height=600, maze=maze)
     
-    # Find a valid starting position in the maze (on a path)
-    # Start at world position (0, 0) and find nearest path
-    start_world = (0.0, 0.0)
-    start_cell = maze.world_to_cell(start_world)
-    
-    # Ensure the starting chunk is loaded
-    maze._ensure_chunks_loaded(start_world)
-    
-    # Find a nearby path cell
+    # Find a valid starting position in the maze (on a path) - RANDOM
     import random
-    found_path = False
-    for radius in range(5):  # Search in expanding radius
-        for dx in range(-radius, radius + 1):
-            for dy in range(-radius, radius + 1):
-                if dx == 0 and dy == 0 and radius > 0:
-                    continue
-                test_cell = (start_cell[0] + dx, start_cell[1] + dy)
-                
-                # Get chunk for this cell
-                chunk_x = test_cell[0] // maze.chunk_size
-                chunk_y = test_cell[1] // maze.chunk_size
-                if test_cell[0] < 0:
-                    chunk_x = (test_cell[0] - maze.chunk_size + 1) // maze.chunk_size
-                if test_cell[1] < 0:
-                    chunk_y = (test_cell[1] - maze.chunk_size + 1) // maze.chunk_size
+    
+    # First, ensure chunks are loaded around origin
+    maze._ensure_chunks_loaded((0.0, 0.0))
+    
+    # Collect all valid starting positions first
+    valid_positions = []
+    search_radius = 20
+    
+    for cell_x in range(-search_radius, search_radius + 1):
+        for cell_y in range(-search_radius, search_radius + 1):
+            # Test cell center position
+            test_world = maze.cell_to_world((cell_x, cell_y))
+            test_x, test_y = test_world
+            
+            # Check collision with proper margin
+            if not maze.check_collision((test_x, test_y), 12.0 + 2):  # Player radius + margin
+                # Double-check by verifying it's actually a path cell
+                chunk_x = cell_x // maze.chunk_size
+                chunk_y = cell_y // maze.chunk_size
+                if cell_x < 0:
+                    chunk_x = (cell_x - maze.chunk_size + 1) // maze.chunk_size
+                if cell_y < 0:
+                    chunk_y = (cell_y - maze.chunk_size + 1) // maze.chunk_size
                 
                 chunk = maze._get_or_create_chunk(chunk_x, chunk_y)
+                local_x = cell_x % maze.chunk_size
+                local_y = cell_y % maze.chunk_size
+                if cell_x < 0:
+                    local_x = (cell_x % maze.chunk_size + maze.chunk_size) % maze.chunk_size
+                if cell_y < 0:
+                    local_y = (cell_y % maze.chunk_size + maze.chunk_size) % maze.chunk_size
                 
-                # Convert to local coordinates
-                local_x = test_cell[0] % maze.chunk_size
-                local_y = test_cell[1] % maze.chunk_size
-                if test_cell[0] < 0:
-                    local_x = (test_cell[0] % maze.chunk_size + maze.chunk_size) % maze.chunk_size
-                if test_cell[1] < 0:
-                    local_y = (test_cell[1] % maze.chunk_size + maze.chunk_size) % maze.chunk_size
-                
-                if (local_x, local_y) in chunk.paths:
-                    start_cell = test_cell
-                    start_world = maze.cell_to_world(start_cell)
-                    found_path = True
-                    break
-            if found_path:
-                break
-        if found_path:
-            break
+                # Verify it's a path, not a wall
+                if (local_x, local_y) in chunk.paths and (local_x, local_y) not in chunk.walls:
+                    valid_positions.append((test_x, test_y))
     
-    if not found_path:
-        # Fallback: just use (0, 0) and hope for the best
-        start_world = (0.0, 0.0)
+    # Randomly select from valid positions
+    if valid_positions:
+        start_world = random.choice(valid_positions)
+        start_cell = maze.world_to_cell(start_world)
+        print(f"✓ Found {len(valid_positions)} valid starting positions, selected random position")
+    else:
+        # Fallback: try more aggressive search
+        print("⚠ No valid positions found in initial search, trying fallback...")
+        fallback_positions = []
+        for cell_x in range(-30, 31):
+            for cell_y in range(-30, 31):
+                test_world = maze.cell_to_world((cell_x, cell_y))
+                test_x, test_y = test_world
+                if not maze.check_collision((test_x, test_y), 12.0 + 5):
+                    fallback_positions.append((test_x, test_y))
+        
+        if fallback_positions:
+            start_world = random.choice(fallback_positions)
+            start_cell = maze.world_to_cell(start_world)
+            print(f"✓ Found {len(fallback_positions)} fallback positions, selected random position")
+        else:
+            # Final safety: try random positions
+            print("⚠ Using random position search as last resort")
+            start_world = (0.0, 0.0)
+            for attempts in range(100):
+                random_x = (random.random() - 0.5) * 1000
+                random_y = (random.random() - 0.5) * 1000
+                if not maze.check_collision((random_x, random_y), 12.0 + 10):
+                    start_world = (random_x, random_y)
+                    break
+            start_cell = maze.world_to_cell(start_world)
+    
+    # Final verification
+    if maze.check_collision(start_world, 12.0):
+        print("⚠ Warning: Starting position may be in wall, attempting to find safe position...")
+        # Try to find any safe position
+        for attempts in range(200):
+            test_x = (random.random() - 0.5) * 2000
+            test_y = (random.random() - 0.5) * 2000
+            if not maze.check_collision((test_x, test_y), 12.0 + 5):
+                start_world = (test_x, test_y)
+                start_cell = maze.world_to_cell(start_world)
+                print(f"✓ Found safe position at ({test_x:.1f}, {test_y:.1f})")
+                break
     
     # Create player entity at valid maze position
     player = GameEntity(

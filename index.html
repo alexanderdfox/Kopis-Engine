@@ -227,6 +227,9 @@
                 <div class="key" id="keyS">S</div>
                 <div class="key" id="keyD">D</div>
             </div>
+            <p style="margin-top: 10px; font-size: 11px; color: #00d4ff; text-align: center;">
+                Move mouse to control player
+            </p>
         </div>
     </div>
 
@@ -250,6 +253,7 @@
             camera: { x: 0, y: 0 },
             cameraTarget: { x: 0, y: 0 },
             keys: {},
+            mouse: { x: 0, y: 0, worldX: 0, worldY: 0, active: false },
             frame: 0,
             lastTime: 0,
             fps: 60,
@@ -736,7 +740,7 @@
             game.cameraTarget.x = game.player.x;
             game.cameraTarget.y = game.player.y;
 
-            // Input handling
+            // Input handling - Keyboard
             document.addEventListener('keydown', (e) => {
                 game.keys[e.key.toLowerCase()] = true;
                 updateKeyDisplay();
@@ -745,6 +749,30 @@
             document.addEventListener('keyup', (e) => {
                 game.keys[e.key.toLowerCase()] = false;
                 updateKeyDisplay();
+            });
+
+            // Input handling - Mouse
+            game.canvas.addEventListener('mousemove', (e) => {
+                const rect = game.canvas.getBoundingClientRect();
+                game.mouse.x = e.clientX - rect.left;
+                game.mouse.y = e.clientY - rect.top;
+                
+                // Convert screen coordinates to world coordinates
+                game.mouse.worldX = game.camera.x + (game.mouse.x - game.canvas.width / 2);
+                game.mouse.worldY = game.camera.y + (game.mouse.y - game.canvas.height / 2);
+                game.mouse.active = true;
+            });
+
+            game.canvas.addEventListener('mousedown', (e) => {
+                game.mouse.active = true;
+            });
+
+            game.canvas.addEventListener('mouseup', (e) => {
+                // Keep mouse active for movement, only deactivate on mouse leave
+            });
+
+            game.canvas.addEventListener('mouseleave', (e) => {
+                game.mouse.active = false;
             });
 
             // Hide loading
@@ -768,15 +796,35 @@
         }
 
         function update(deltaTime) {
-            // Player input
+            // Update mouse world coordinates based on current camera position
+            if (game.mouse.active) {
+                game.mouse.worldX = game.camera.x + (game.mouse.x - game.canvas.width / 2);
+                game.mouse.worldY = game.camera.y + (game.mouse.y - game.canvas.height / 2);
+            }
+
+            // Player input - Keyboard
             let vx = 0, vy = 0;
             if (game.keys['w']) vy -= PLAYER_SPEED;
             if (game.keys['s']) vy += PLAYER_SPEED;
             if (game.keys['a']) vx -= PLAYER_SPEED;
             if (game.keys['d']) vx += PLAYER_SPEED;
 
-            // Normalize diagonal
-            if (vx !== 0 && vy !== 0) {
+            // Player input - Mouse (moves towards cursor, overrides keyboard)
+            if (game.mouse.active) {
+                const dx = game.mouse.worldX - game.player.x;
+                const dy = game.mouse.worldY - game.player.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Only move if mouse is far enough away (dead zone)
+                if (distance > 5) {
+                    const speed = Math.min(PLAYER_SPEED, distance * 2); // Faster when far, slower when close
+                    vx = (dx / distance) * speed;
+                    vy = (dy / distance) * speed;
+                }
+            }
+
+            // Normalize diagonal (only for keyboard input)
+            if (vx !== 0 && vy !== 0 && !game.mouse.active) {
                 vx *= 0.707;
                 vy *= 0.707;
             }
@@ -1124,6 +1172,47 @@
                 ctx.textAlign = 'center';
                 ctx.fillText(entity.id, screen.x, screen.y - radius - 13);
             });
+
+            // Draw mouse target indicator
+            if (game.mouse.active) {
+                const mouseScreen = worldToScreen(game.mouse.worldX, game.mouse.worldY);
+                if (mouseScreen.x >= 0 && mouseScreen.x <= canvas.width &&
+                    mouseScreen.y >= 0 && mouseScreen.y <= canvas.height) {
+                    
+                    ctx.save();
+                    ctx.strokeStyle = '#00d4ff';
+                    ctx.lineWidth = 2;
+                    ctx.globalAlpha = 0.7;
+                    
+                    // Draw crosshair
+                    const crossSize = 10;
+                    ctx.beginPath();
+                    ctx.moveTo(mouseScreen.x - crossSize, mouseScreen.y);
+                    ctx.lineTo(mouseScreen.x + crossSize, mouseScreen.y);
+                    ctx.moveTo(mouseScreen.x, mouseScreen.y - crossSize);
+                    ctx.lineTo(mouseScreen.x, mouseScreen.y + crossSize);
+                    ctx.stroke();
+                    
+                    // Draw outer circle
+                    ctx.beginPath();
+                    ctx.arc(mouseScreen.x, mouseScreen.y, 15, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    // Draw line from player to mouse
+                    const playerScreen = worldToScreen(game.player.x, game.player.y);
+                    ctx.strokeStyle = '#00d4ff';
+                    ctx.lineWidth = 1;
+                    ctx.globalAlpha = 0.3;
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.moveTo(playerScreen.x, playerScreen.y);
+                    ctx.lineTo(mouseScreen.x, mouseScreen.y);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    
+                    ctx.restore();
+                }
+            }
 
             // Update UI
             document.getElementById('fps').textContent = game.fps;
