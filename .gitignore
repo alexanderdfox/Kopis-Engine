@@ -142,3 +142,19 @@ htmlcov/
 # Documentation builds
 docs/_build/
 
+# Swift build artifacts
+KopisEngine/.build/
+KopisEngine/.swiftpm/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+
+# Xcode user data
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+
+# Scripts (keep in repo, but ignore temp files)
+scripts/*.tmp
+scripts/*.log
+

@@ -17,6 +17,12 @@ This roadmap outlines the development plan for the Kopis Engine, a transformer-b
 - Game loop with frame processing
 - NPC information display
 - Optional transformer loading (stability mode)
+- **Swift/macOS GUI** - Native macOS app with SwiftUI
+- **Metal 4 rendering** - GPU-accelerated raycasting
+- **Sound system** - AVFoundation-based audio
+- **3D raycasting** - Doom-style rendering
+- **Game of Life** - Blood pattern effects
+- **Entity rendering** - Billboard sprites with depth sorting
 
 ### 🔧 Known Issues
 - ~~Bus errors when loading multiple transformers~~ ✅ **FIXED**: Using CPU mode and shared pipeline instance

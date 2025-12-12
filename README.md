@@ -25,6 +25,16 @@ The engine follows a transformer circuit architecture:
 - **State History**: Tracks frame-by-frame changes
 - **Persistent Data**: Save/load system support
 
+## Project Structure
+
+The project is organized into the following directories:
+- **`KopisEngine/`** - Swift Package (main project)
+- **`scripts/`** - Utility scripts for building and development
+- **`docs/`** - All documentation files
+- **Root** - Main files (Python version, web version, README, etc.)
+
+See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for detailed structure information.
+
 ## Installation
 
 Install the required dependencies:
@@ -35,11 +45,28 @@ pip install -r requirements.txt
 
 ## Usage
 
-Run the engine:
-
+### Python Version
 ```bash
-python kopis-engine.py
+python3 kopis_engine.py
+# Or:
+make python
 ```
+
+### Swift GUI Version (Recommended)
+```bash
+make gui
+# Or open in Xcode:
+make xcode
+# Then select KopisEngineGUI scheme and press ⌘R
+```
+
+### Swift CLI Version
+```bash
+make run
+```
+
+### Web Version
+Open `index.html` in a web browser
 
 ## Features
 
@@ -111,9 +138,46 @@ Next Frame
 - Modify parallel branch processing logic
 - Adjust transformer layers for different abstraction levels
 
+## Platforms
+
+- **Python** - Cross-platform with Pygame
+- **Swift/macOS** - Native macOS GUI with Metal 4 rendering
+- **Web** - Browser-based with HTML5 Canvas
+
+## Features
+
+### Swift GUI Version
+- ✅ Metal 4 GPU-accelerated raycasting
+- ✅ SwiftUI + AppKit integration
+- ✅ Sound system with AVFoundation
+- ✅ Fullscreen support
+- ✅ Mouse capture for FPV controls
+- ✅ Game of Life blood patterns
+- ✅ Entity billboard rendering
+
+### Python Version
+- ✅ Pygame-based rendering
+- ✅ Sound effects
+- ✅ Fullscreen support
+- ✅ 3D raycasting
+
+### Web Version
+- ✅ HTML5 Canvas rendering
+- ✅ Browser-based gameplay
+- ✅ 3D raycasting
+
+## Documentation
+
+See the [docs/](docs/) directory for detailed documentation:
+- [Quick Start Guide](docs/QUICK_START.md)
+- [Xcode Setup](docs/XCODE_SETUP.md)
+- [Metal 4 Setup](docs/METAL4_SETUP.md)
+- [Project Structure](PROJECT_STRUCTURE.md)
+
 ## Notes
 
-- Automatically uses GPU if available (CUDA)
-- Models are downloaded from Hugging Face on first use
+- Swift version requires macOS 13.0+ and Xcode 14.0+
+- Python version requires pygame (install with `pip install -r requirements.txt`)
+- Web version works in modern browsers
 - Designed for extensibility and customization
 - Supports real-time game loop processing
