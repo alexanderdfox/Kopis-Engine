@@ -1,7 +1,30 @@
 #!/bin/bash
 # Open the Swift package in Xcode
 
-cd "$(dirname "$0")/../KopisEngine"
+set -e
+
+# Get the absolute path to the project root (parent of scripts directory)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+KOPIS_ENGINE_DIR="$PROJECT_ROOT/KopisEngine"
+
+# Check if the directory exists
+if [ ! -d "$KOPIS_ENGINE_DIR" ]; then
+    echo "Error: KopisEngine directory not found at: $KOPIS_ENGINE_DIR"
+    exit 1
+fi
+
+# Check if Package.swift exists
+if [ ! -f "$KOPIS_ENGINE_DIR/Package.swift" ]; then
+    echo "Error: Package.swift not found in $KOPIS_ENGINE_DIR"
+    exit 1
+fi
+
+# Change to the KopisEngine directory
+cd "$KOPIS_ENGINE_DIR" || {
+    echo "Error: Failed to change to KopisEngine directory"
+    exit 1
+}
 
 echo "Opening Kopis Engine in Xcode..."
 echo ""
@@ -24,7 +47,7 @@ sleep 2
 # Try to set the default scheme to KopisEngineGUI using xcodebuild
 if command -v xcodebuild &> /dev/null; then
     echo "Setting default scheme to KopisEngineGUI..."
-    cd "$(dirname "$0")/../KopisEngine"
+    # We're already in the KopisEngine directory, so just run xcodebuild
     xcodebuild -scheme KopisEngineGUI -showBuildSettings > /dev/null 2>&1
     echo "✓ Ready! Select KopisEngineGUI scheme and press ⌘R to run"
 fi

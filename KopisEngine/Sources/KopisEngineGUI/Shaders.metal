@@ -242,6 +242,10 @@ kernel void render_entities_compute(
         float tempY = dx.x * sin(yawRad) + dx.y * cos(yawRad);
         float tempZ = dx.z;
         
+        // Rotate by pitch (3D projection)
+        float finalY = tempY * cos(pitchRad) - tempZ * sin(pitchRad);
+        float finalZ = tempY * sin(pitchRad) + tempZ * cos(pitchRad);
+        
         // Project to screen
         float fovScale = 1.0 / tan(uniforms.fov / 2.0);
         float depth = max(0.1, -tempX);
@@ -249,8 +253,8 @@ kernel void render_entities_compute(
         if (depth <= 0 || tempX < 0) continue; // Behind camera
         
         float2 entityScreenPos = float2(
-            uniforms.screenSize.x / 2.0 + tempY * fovScale * (uniforms.screenSize.y / depth),
-            uniforms.screenSize.y / 2.0 - tempZ * fovScale * (uniforms.screenSize.y / depth)
+            uniforms.screenSize.x / 2.0 + finalY * fovScale * (uniforms.screenSize.y / depth),
+            uniforms.screenSize.y / 2.0 - finalZ * fovScale * (uniforms.screenSize.y / depth)
         );
         
         float entitySize = entity.radius * 2.0 * (uniforms.screenSize.y / depth);

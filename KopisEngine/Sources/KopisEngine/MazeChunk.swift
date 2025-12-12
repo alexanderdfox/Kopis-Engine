@@ -143,14 +143,19 @@ class MazeChunk {
             stack.append(start)
             grid[start.1][start.0] = 0
         } else {
-            stack.append((1, 1))
-            grid[1][1] = 0
+            // Use a valid starting position (avoid edges)
+            let startX = max(1, min(width - 2, width / 2))
+            let startY = max(1, min(height - 2, height / 2))
+            stack.append((startX, startY))
+            grid[startY][startX] = 0
         }
         
         // Ensure all connection points are paths
         for key in connectionCells {
             if let (x, y) = keyToTuple(key) {
-                grid[y][x] = 0
+                if x >= 0 && x < width && y >= 0 && y < height {
+                    grid[y][x] = 0
+                }
             }
         }
         
@@ -158,17 +163,26 @@ class MazeChunk {
         let directions = [(0, -2), (2, 0), (0, 2), (-2, 0)]
         
         // Generate maze with recursive backtracking
-        while !stack.isEmpty {
+        // Ensure we have enough paths by continuing until stack is empty
+        var maxIterations = width * height * 2 // Prevent infinite loops
+        var iterations = 0
+        
+        while !stack.isEmpty && iterations < maxIterations {
+            iterations += 1
             let current = stack.last!
             let (x, y) = current
             
-            // Find unvisited neighbors
+            // Find unvisited neighbors (walls that can be carved)
             var neighbors: [(Int, Int, Int, Int)] = []
             for (dx, dy) in directions {
                 let nx = x + dx
                 let ny = y + dy
+                // Check bounds and ensure it's a wall
                 if nx >= 0 && nx < width && ny >= 0 && ny < height && grid[ny][nx] == 1 {
-                    neighbors.append((nx, ny, x + dx / 2, y + dy / 2))
+                    // Calculate wall position between current and neighbor
+                    let wallX = x + dx / 2
+                    let wallY = y + dy / 2
+                    neighbors.append((nx, ny, wallX, wallY))
                 }
             }
             
@@ -176,14 +190,26 @@ class MazeChunk {
                 let neighbor = neighbors.randomElement(using: &rng)!
                 let (nx, ny, wallX, wallY) = neighbor
                 
+                // Carve path to neighbor
                 grid[ny][nx] = 0
+                // Carve wall between current and neighbor
                 if wallX >= 0 && wallX < width && wallY >= 0 && wallY < height {
                     grid[wallY][wallX] = 0
                 }
                 
                 stack.append((nx, ny))
             } else {
+                // Backtrack
                 stack.removeLast()
+            }
+        }
+        
+        // Ensure connection points are still paths (they might have been overwritten)
+        for key in connectionCells {
+            if let (x, y) = keyToTuple(key) {
+                if x >= 0 && x < width && y >= 0 && y < height {
+                    grid[y][x] = 0
+                }
             }
         }
         

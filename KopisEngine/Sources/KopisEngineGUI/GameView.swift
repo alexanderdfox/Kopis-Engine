@@ -185,6 +185,8 @@ class GameNSView: NSView {
         context.fill(bounds)
         
         // Render game (basic implementation - can be enhanced with Metal)
+        // dirtyRect is provided by NSView but we render the full bounds
+        _ = dirtyRect
         viewModel?.render(context: context, bounds: bounds)
     }
     

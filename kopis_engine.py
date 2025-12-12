@@ -2871,6 +2871,96 @@ def main():
     # Initialize pygame renderer with maze
     renderer = PygameRenderer(width=800, height=600, maze=maze)
     
+    # Show epilepsy warning before starting game
+    def show_epilepsy_warning():
+        """Display epilepsy warning screen and wait for user acknowledgment"""
+        warning_screen = renderer.screen
+        clock = pygame.time.Clock()
+        
+        # Warning colors
+        RED = (255, 68, 68)
+        DARK_RED = (204, 0, 0)
+        WHITE = (255, 255, 255)
+        BLACK = (0, 0, 0)
+        DARK_BG = (26, 26, 46)
+        
+        # Create warning font
+        try:
+            title_font = pygame.font.Font(None, 72)
+            text_font = pygame.font.Font(None, 36)
+            button_font = pygame.font.Font(None, 48)
+        except:
+            title_font = pygame.font.SysFont('arial', 72, bold=True)
+            text_font = pygame.font.SysFont('arial', 36)
+            button_font = pygame.font.SysFont('arial', 48, bold=True)
+        
+        acknowledged = False
+        
+        while not acknowledged:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE or event.key == pygame.K_ESCAPE:
+                        acknowledged = True
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    acknowledged = True
+            
+            # Clear screen with dark background
+            warning_screen.fill(DARK_BG)
+            
+            # Draw warning border
+            pygame.draw.rect(warning_screen, RED, (50, 50, renderer.width - 100, renderer.height - 100), 5)
+            
+            # Warning icon (⚠)
+            icon_text = text_font.render("⚠", True, RED)
+            icon_rect = icon_text.get_rect(center=(renderer.width // 2, 150))
+            warning_screen.blit(icon_text, icon_rect)
+            
+            # Title
+            title_text = title_font.render("EPILEPSY WARNING", True, RED)
+            title_rect = title_text.get_rect(center=(renderer.width // 2, 250))
+            warning_screen.blit(title_text, title_rect)
+            
+            # Warning message
+            message_lines = [
+                "This application contains flashing lights, rapid visual changes,",
+                "and intense visual effects that may trigger seizures in people",
+                "with photosensitive epilepsy or other photosensitive conditions.",
+                "",
+                "If you have a history of epilepsy or are sensitive to flashing",
+                "lights, please use caution or avoid using this application."
+            ]
+            
+            y_offset = 350
+            for line in message_lines:
+                if line:  # Skip empty lines
+                    text = text_font.render(line, True, WHITE)
+                    text_rect = text.get_rect(center=(renderer.width // 2, y_offset))
+                    warning_screen.blit(text, text_rect)
+                y_offset += 45
+            
+            # Button
+            button_text = button_font.render("Press ENTER, SPACE, or CLICK to Continue", True, WHITE)
+            button_rect = button_text.get_rect(center=(renderer.width // 2, renderer.height - 150))
+            
+            # Draw button background
+            button_bg_rect = pygame.Rect(button_rect.x - 20, button_rect.y - 10, 
+                                        button_rect.width + 40, button_rect.height + 20)
+            pygame.draw.rect(warning_screen, DARK_RED, button_bg_rect)
+            pygame.draw.rect(warning_screen, RED, button_bg_rect, 3)
+            warning_screen.blit(button_text, button_rect)
+            
+            pygame.display.flip()
+            clock.tick(60)
+        
+        return True
+    
+    # Show warning and check if user wants to continue
+    if not show_epilepsy_warning():
+        print("Game cancelled by user")
+        return
+    
     # Find a valid starting position in the maze (on a path) - RANDOM
     import random
     

@@ -37,9 +37,9 @@ class StackedTransformers {
             currentState = String(jsonString.prefix(512))
         }
         
-        var voltage: Double = 2.51
+        let voltage: Double = 2.51
         
-        for layer in layers {
+        for _ in layers {
             // Simplified processing (transformers would be integrated here if needed)
             currentState = "Processed: \(currentState.prefix(100))"
         }

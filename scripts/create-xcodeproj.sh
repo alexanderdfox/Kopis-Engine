@@ -3,7 +3,22 @@
 
 set -e
 
-cd "$(dirname "$0")/../KopisEngine"
+# Get the absolute path to the project root
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+KOPIS_ENGINE_DIR="$PROJECT_ROOT/KopisEngine"
+
+# Check if the directory exists
+if [ ! -d "$KOPIS_ENGINE_DIR" ]; then
+    echo "Error: KopisEngine directory not found at: $KOPIS_ENGINE_DIR"
+    exit 1
+fi
+
+# Change to the KopisEngine directory
+cd "$KOPIS_ENGINE_DIR" || {
+    echo "Error: Failed to change to KopisEngine directory"
+    exit 1
+}
 
 echo "Creating Xcode project for Kopis Engine..."
 echo ""

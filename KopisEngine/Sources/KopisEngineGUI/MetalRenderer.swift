@@ -39,26 +39,66 @@ public class MetalRenderer {
         // Create Metal library from source
         // In Swift Package Manager executables, shaders need to be loaded from source
         // Try default library first, but fall back to source if functions aren't found
-        let metalLibrary: MTLLibrary
+        var metalLibrary: MTLLibrary?
         
-        if let defaultLibrary = metalDevice.makeDefaultLibrary(),
-           defaultLibrary.makeFunction(name: "raycast_compute") != nil {
-            // Default library has our shaders (Xcode build)
-            metalLibrary = defaultLibrary
-        } else {
-            // Load from source (Swift Package Manager or shaders not in default location)
-            let shaderSource = Self.loadShaderSource()
-            
-            do {
-                metalLibrary = try metalDevice.makeLibrary(source: shaderSource, options: nil)
-                print("✓ Metal library created from source")
-            } catch {
-                print("⚠ Failed to create Metal library from source: \(error)")
-                return nil
+        // Try default library first (with retry for cache locking issues)
+        for attempt in 0..<3 {
+            if let lib = metalDevice.makeDefaultLibrary(),
+               lib.makeFunction(name: "raycast_compute") != nil {
+                metalLibrary = lib
+                print("✓ Metal library loaded from default library")
+                break
+            }
+            if attempt < 2 {
+                Thread.sleep(forTimeInterval: 0.1 * Double(attempt + 1))
             }
         }
         
-        self.library = metalLibrary
+        // If default library didn't work, load from source
+        if metalLibrary == nil {
+            let shaderSource = Self.loadShaderSource()
+            
+            // Retry logic for cache locking issues
+            for attempt in 0..<3 {
+                do {
+                    metalLibrary = try metalDevice.makeLibrary(source: shaderSource, options: nil)
+                    print("✓ Metal library created from source (attempt \(attempt + 1))")
+                    break
+                } catch {
+                    let errorDesc = "\(error)"
+                    // Check for cache locking issues (errno 35, flock errors)
+                    let isCacheLockError = errorDesc.contains("flock") || 
+                                          errorDesc.contains("errno = 35") || 
+                                          errorDesc.contains("libraries.list") ||
+                                          errorDesc.contains("Resource temporarily unavailable")
+                    
+                    if isCacheLockError && attempt < 2 {
+                        // Retry after a short delay for cache locking issues
+                        let delay = 0.2 * Double(attempt + 1)
+                        print("⚠ Metal library creation failed due to cache lock (attempt \(attempt + 1)), retrying in \(delay)s...")
+                        Thread.sleep(forTimeInterval: delay)
+                        continue
+                    } else if attempt < 2 {
+                        // Other errors - retry once
+                        let delay = 0.1 * Double(attempt + 1)
+                        print("⚠ Metal library creation failed (attempt \(attempt + 1)), retrying in \(delay)s: \(error.localizedDescription)")
+                        Thread.sleep(forTimeInterval: delay)
+                        continue
+                    } else {
+                        print("⚠ Failed to create Metal library from source after 3 attempts: \(error)")
+                        // Don't fail completely - we can still use CPU rendering
+                        return nil
+                    }
+                }
+            }
+        }
+        
+        guard let library = metalLibrary else {
+            print("⚠ Failed to create Metal library")
+            return nil
+        }
+        
+        self.library = library
         
         // Create texture cache for Core Video
         var textureCache: CVMetalTextureCache?
@@ -103,14 +143,36 @@ public class MetalRenderer {
     private func setupComputePipeline() {
         // Create compute pipeline for raycasting
         guard let computeFunction = library.makeFunction(name: "raycast_compute") else {
-            print("⚠ Failed to find raycast_compute function")
+            print("⚠ Failed to find raycast_compute function in Metal library")
+            print("⚠ This is normal if shaders aren't compiled - will use CPU rendering fallback")
             return
         }
         
-        do {
-            computePipelineState = try device.makeComputePipelineState(function: computeFunction)
-        } catch {
-            print("⚠ Failed to create compute pipeline: \(error)")
+        // Retry logic for cache locking issues (errno 35)
+        for attempt in 0..<3 {
+            do {
+                computePipelineState = try device.makeComputePipelineState(function: computeFunction)
+                print("✓ Metal compute pipeline created successfully (attempt \(attempt + 1))")
+                return
+            } catch {
+                let errorDesc = "\(error)"
+                if errorDesc.contains("flock") || errorDesc.contains("errno = 35") || errorDesc.contains("libraries.list") {
+                    if attempt < 2 {
+                        // Retry after a short delay for cache locking issues
+                        let delay = 0.2 * Double(attempt + 1)
+                        print("⚠ Compute pipeline creation failed due to cache lock (attempt \(attempt + 1)), retrying in \(delay)s...")
+                        Thread.sleep(forTimeInterval: delay)
+                        continue
+                    } else {
+                        print("⚠ Failed to create compute pipeline after 3 attempts (cache lock issue): \(error)")
+                        print("⚠ Will use CPU rendering fallback")
+                    }
+                } else {
+                    print("⚠ Failed to create compute pipeline: \(error)")
+                    print("⚠ Will use CPU rendering fallback")
+                    break
+                }
+            }
         }
     }
     
@@ -140,6 +202,10 @@ public class MetalRenderer {
         }
     }
     
+    public func hasComputePipeline() -> Bool {
+        return computePipelineState != nil
+    }
+    
     func renderToDrawable(
         drawable: CAMetalDrawable,
         renderPassDescriptor: MTLRenderPassDescriptor,
@@ -147,7 +213,7 @@ public class MetalRenderer {
         bounds: CGRect
     ) {
         guard let engine = viewModel.engine,
-              let raycaster = viewModel.raycaster else {
+              let _ = viewModel.raycaster else {
             return
         }
         

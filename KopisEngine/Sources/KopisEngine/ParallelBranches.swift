@@ -220,8 +220,8 @@ class ParallelBranches {
             }
             
             let speed: Double = 50.0
-            var vx = (dx / distance) * speed
-            var vy = (dy / distance) * speed
+            let vx = (dx / distance) * speed
+            let vy = (dy / distance) * speed
             
             var newEntity = entity
             newEntity.velocity = Vector3(x: vx, y: vy, z: entity.velocity.z)

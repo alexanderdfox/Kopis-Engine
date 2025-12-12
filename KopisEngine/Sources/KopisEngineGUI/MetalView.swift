@@ -1,5 +1,6 @@
 import SwiftUI
 import MetalKit
+import Metal
 import AppKit
 import KopisEngine
 
@@ -27,6 +28,13 @@ struct MetalGameView: NSViewRepresentable {
         // Update view model reference if needed
         if nsView.viewModel !== viewModel {
             nsView.viewModel = viewModel
+            print("✓ MetalGameView: viewModel updated")
+        }
+        // Force the view to render
+        nsView.needsDisplay = true
+        // Ensure view can receive keyboard input
+        DispatchQueue.main.async {
+            nsView.window?.makeFirstResponder(nsView)
         }
     }
 }
@@ -36,8 +44,10 @@ class MTKGameView: MTKView {
     private var metalRenderer: MetalRenderer?
     private var trackingArea: NSTrackingArea?
     private var mouseCaptured = false
-    
+    private var previousMouseLocation: NSPoint = .zero
     private var isConfigured = false
+    private var frameCount = 0
+    private var lastLogTime: Date?
     
     override init(frame frameRect: CGRect, device: MTLDevice?) {
         let metalDevice = device ?? MTLCreateSystemDefaultDevice()
@@ -78,6 +88,8 @@ class MTKGameView: MTKView {
         enableSetNeedsDisplay = false
         isPaused = false
         preferredFramesPerSecond = 60
+        // Ensure the view renders continuously
+        needsDisplay = true
         
         // Create Metal renderer
         metalRenderer = MetalRenderer(device: device)
@@ -89,13 +101,23 @@ class MTKGameView: MTKView {
         
         // Set delegate for rendering
         delegate = self
+        print("✓ MTKView delegate set")
+        
+        // Ensure view renders
+        needsDisplay = true
         
         isConfigured = true
+        print("✓ Metal view configuration complete")
     }
     
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        
+        // Make this view first responder when window appears to receive keyboard input
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.makeFirstResponder(self)
+        }
         
         guard window != nil else {
             releaseMouse()
@@ -159,8 +181,6 @@ class MTKGameView: MTKView {
         updateTrackingArea()
     }
     
-    private var previousMouseLocation: NSPoint = .zero
-    
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
@@ -171,6 +191,7 @@ class MTKGameView: MTKView {
             } else {
                 captureMouse()
             }
+            return
         }
         
         viewModel?.handleKeyEvent(event, isDown: true)
@@ -178,6 +199,11 @@ class MTKGameView: MTKView {
     
     override func keyUp(with event: NSEvent) {
         viewModel?.handleKeyEvent(event, isDown: false)
+    }
+    
+    override func flagsChanged(with event: NSEvent) {
+        // Handle modifier keys if needed
+        super.flagsChanged(with: event)
     }
     
     override func mouseMoved(with event: NSEvent) {
@@ -212,6 +238,8 @@ extension MTKGameView: MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         // Handle resize safely
         guard size.width > 0 && size.height > 0 else { return }
+        // view parameter is required by protocol but not used here
+        _ = view
         metalRenderer?.updateDrawableSize(size)
     }
     
@@ -230,28 +258,164 @@ extension MTKGameView: MTKViewDelegate {
             return
         }
         
+        // Debug: Log that draw is being called (throttled)
+        frameCount += 1
+        if frameCount == 1 || frameCount % 60 == 0 {
+            print("✓ MTKView draw() called (frame \(frameCount), size: \(view.bounds.width)x\(view.bounds.height))")
+        }
+        
         guard let viewModel = viewModel else {
             // Clear to black if no view model
+            if frameCount == 1 || frameCount % 60 == 0 {
+                print("⚠ MTKView draw(): viewModel is nil")
+            }
             clearToBlack(view: view)
             return
         }
         
-        guard let renderer = metalRenderer,
-              let drawable = view.currentDrawable,
-              let renderPassDescriptor = view.currentRenderPassDescriptor else {
+        // Check if game is initialized
+        guard let _ = viewModel.engine, let _ = viewModel.raycaster else {
+            #if DEBUG
+            if frameCount == 1 || frameCount % 60 == 0 {
+                print("⚠ MTKView draw(): engine or raycaster not initialized")
+                if viewModel.engine == nil { print("  - engine is nil") }
+                if viewModel.raycaster == nil { print("  - raycaster is nil") }
+            }
+            #endif
+            clearToBlack(view: view)
             return
         }
         
         // Update game state
         viewModel.updateFrame()
         
-        // Render with Metal
-        renderer.renderToDrawable(
-            drawable: drawable,
-            renderPassDescriptor: renderPassDescriptor,
-            viewModel: viewModel,
-            bounds: view.bounds
-        )
+        // Try Metal GPU rendering first (if compute pipeline is available)
+        // TEMPORARILY DISABLED: Force CPU rendering to ensure walls and Game of Life work
+        // TODO: Fix Metal compute shader to render walls properly
+        let forceCPURendering = true
+        
+        if !forceCPURendering, let renderer = metalRenderer,
+           renderer.hasComputePipeline(),
+           let drawable = view.currentDrawable,
+           let renderPassDescriptor = view.currentRenderPassDescriptor {
+            // Use Metal compute shader path
+            if frameCount == 1 || frameCount % 60 == 0 {
+                print("⚠ Using Metal GPU rendering (walls/GameOfLife may not work yet)")
+            }
+            renderer.renderToDrawable(
+                drawable: drawable,
+                renderPassDescriptor: renderPassDescriptor,
+                viewModel: viewModel,
+                bounds: view.bounds
+            )
+            return
+        }
+        
+        // Debug: Log which rendering path we're using
+        if forceCPURendering {
+            if frameCount == 1 || frameCount % 60 == 0 {
+                print("✓ Using CPU rendering (walls and GameOfLife enabled)")
+            }
+        } else if metalRenderer == nil {
+            print("⚠ Metal renderer not available, using CPU fallback")
+        } else if !metalRenderer!.hasComputePipeline() {
+            print("⚠ Metal compute pipeline not available, using CPU fallback")
+        }
+        
+        // Fallback: Use CPU rendering and render to a bitmap, then copy to Metal
+        // This is more reliable when Metal compute shaders aren't available
+        guard let drawable = view.currentDrawable,
+              let _ = view.currentRenderPassDescriptor,
+              let device = view.device,
+              let commandQueue = device.makeCommandQueue(),
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            clearToBlack(view: view)
+            return
+        }
+        
+        // Create a bitmap context for CPU rendering
+        let width = Int(view.bounds.width)
+        let height = Int(view.bounds.height)
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            clearToBlack(view: view)
+            return
+        }
+        
+        // Render using CPU path (which works reliably)
+        // Save the context state before rendering
+        context.saveGState()
+        defer { context.restoreGState() }
+        
+        // Flip the coordinate system - CGContext has origin at bottom-left, we want top-left
+        // This is necessary because CGContext uses a flipped coordinate system
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1.0, y: -1.0)
+        
+        // Clear to black first (in flipped coordinates, this is at the "bottom" which is actually top)
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        
+        // Render the game scene (all coordinates will be automatically flipped)
+        viewModel.render(context: context, bounds: view.bounds)
+        
+        // Get the rendered image
+        guard let cgImage = context.makeImage() else {
+            print("⚠ Failed to create CGImage from CPU render context")
+            clearToBlack(view: view)
+            return
+        }
+        
+        // Only log once per second to avoid spam
+        if frameCount == 1 || frameCount % 60 == 0 {
+            print("✓ CPU rendering completed, copying to Metal texture (size: \(width)x\(height))")
+        }
+        
+        // Create a Metal texture from the CGImage and copy to drawable
+        let textureLoader = MTKTextureLoader(device: device)
+        do {
+            let texture = try textureLoader.newTexture(cgImage: cgImage, options: nil)
+            
+            // Blit the texture to the drawable
+            if let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+                blitEncoder.copy(
+                    from: texture,
+                    sourceSlice: 0,
+                    sourceLevel: 0,
+                    sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                    sourceSize: MTLSize(width: width, height: height, depth: 1),
+                    to: drawable.texture,
+                    destinationSlice: 0,
+                    destinationLevel: 0,
+                    destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+                )
+                blitEncoder.endEncoding()
+            }
+            
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
+            // Only log once per second to avoid spam
+            let now = Date()
+            if lastLogTime == nil || now.timeIntervalSince(lastLogTime!) > 1.0 {
+                print("✓ CPU rendering to Metal texture successful")
+                lastLogTime = now
+            }
+        } catch {
+            print("⚠ Failed to create texture from CPU render: \(error)")
+            clearToBlack(view: view)
+        }
     }
     
     private func clearToBlack(view: MTKView) {

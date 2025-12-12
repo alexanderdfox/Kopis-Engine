@@ -5,53 +5,58 @@ public class SoundManager {
     public var enabled: Bool = false
     private var audioEngine: AVAudioEngine?
     private var sounds: [String: AVAudioPCMBuffer] = [:]
+    private var engineStarted: Bool = false
+    private let setupQueue = DispatchQueue(label: "com.kopisengine.soundmanager")
     
     public init() {
-        setupAudioEngine()
-        // Generate sounds after a short delay to ensure audio engine is ready
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.generateSounds()
-        }
+        // Don't initialize audio engine immediately - use lazy initialization
+        // Generate sounds without starting the engine
+        generateSounds()
     }
     
-    private func setupAudioEngine() {
-        // AVAudioEngine setup must be on main thread
-        if Thread.isMainThread {
-            setupAudioEngineInternal()
-        } else {
+    private func ensureAudioEngineStarted() -> Bool {
+        // Ensure we're on main thread for audio operations
+        if !Thread.isMainThread {
+            var result = false
             DispatchQueue.main.sync {
-                setupAudioEngineInternal()
+                result = ensureAudioEngineStarted()
             }
+            return result
         }
-    }
-    
-    private func setupAudioEngineInternal() {
-        do {
-            let audioEngine = AVAudioEngine()
-            
-            // The mainMixerNode is automatically part of the engine and connected to outputNode
-            // We don't need to attach or connect it manually
-            
+        
+        // If already started, return success
+        if engineStarted, let engine = audioEngine, engine.isRunning {
+            return true
+        }
+        
+        // Create engine if needed
+        if audioEngine == nil {
+            audioEngine = AVAudioEngine()
+        }
+        
+        guard let audioEngine = audioEngine else {
+            return false
+        }
+        
+        // Don't start the engine until we have at least one node attached
+        // The engine will be started when we play the first sound
+        if !engineStarted {
             // Prepare the engine (this ensures all nodes are ready)
+            // Note: prepare() doesn't throw, so no try-catch needed
             audioEngine.prepare()
-            
-            // Start the audio engine
-            try audioEngine.start()
-            
-            self.audioEngine = audioEngine
             self.enabled = true
-            print("✓ Sound system initialized")
-        } catch {
-            print("⚠ Sound system unavailable: \(error)")
-            self.enabled = false
         }
+        
+        return true
     }
     
     private func generateSounds() {
-        guard enabled else { return }
-        
+        // Generate sounds without requiring the engine to be started
         let sampleRate: Double = 22050.0
-        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) else {
+            print("⚠ Sound system: Failed to create audio format")
+            return
+        }
         
         // Footstep sound (400 Hz, 0.1s)
         if let footstep = generateTone(frequency: 400.0, duration: 0.1, volume: 0.3, sampleRate: sampleRate, format: format) {
@@ -66,6 +71,10 @@ public class SoundManager {
         // Movement start sound (200 Hz, 0.05s)
         if let moveStart = generateTone(frequency: 200.0, duration: 0.05, volume: 0.2, sampleRate: sampleRate, format: format) {
             sounds["move_start"] = moveStart
+        }
+        
+        if !sounds.isEmpty {
+            print("✓ Sound buffers generated (\(sounds.count) sounds)")
         }
     }
     
@@ -100,9 +109,7 @@ public class SoundManager {
     }
     
     public func play(_ soundName: String, volume: Float = 0.5) {
-        guard enabled,
-              let audioEngine = audioEngine,
-              let buffer = sounds[soundName] else {
+        guard let buffer = sounds[soundName] else {
             return
         }
         
@@ -114,6 +121,11 @@ public class SoundManager {
             return
         }
         
+        // Ensure audio engine is prepared (but don't start until we have a node)
+        guard ensureAudioEngineStarted(), let audioEngine = audioEngine else {
+            return
+        }
+        
         // Create a new player node for each sound (allows overlapping sounds)
         let playerNode = AVAudioPlayerNode()
         audioEngine.attach(playerNode)
@@ -121,6 +133,19 @@ public class SoundManager {
         // Connect player directly to main mixer
         // Use the buffer's format to match the sound data
         audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: buffer.format)
+        
+        // Start the engine if not already started (now we have a node attached)
+        if !engineStarted {
+            do {
+                try audioEngine.start()
+                engineStarted = true
+                print("✓ Sound engine started")
+            } catch {
+                print("⚠ Failed to start sound engine: \(error)")
+                audioEngine.detach(playerNode)
+                return
+            }
+        }
         
         // Set volume on the player node
         playerNode.volume = volume
@@ -140,8 +165,13 @@ public class SoundManager {
     }
     
     public func cleanup() {
-        audioEngine?.stop()
-        audioEngine = nil
+        if let engine = audioEngine {
+            if engine.isRunning {
+                engine.stop()
+            }
+            audioEngine = nil
+        }
+        engineStarted = false
         enabled = false
     }
     

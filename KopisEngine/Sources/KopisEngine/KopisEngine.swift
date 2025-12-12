@@ -164,7 +164,7 @@ public class KopisEngine {
         }
         
         // Process through transformer circuit
-        let inputSignal = stackedTransformers.process(inputData: inputData)
+        _ = stackedTransformers.process(inputData: inputData)
         
         // Process parallel branches
         let updatedEntities = parallelBranches.processPhysics(

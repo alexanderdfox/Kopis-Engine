@@ -6,10 +6,17 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
+            // Background color to verify view is showing
+            Color.black
+                .ignoresSafeArea()
+            
             // Game view - using Metal 4 rendering
             MetalGameView()
                 .environmentObject(viewModel)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear {
+                    print("✓ MetalGameView appeared in ContentView")
+                }
             
             // UI Overlay
             VStack {
@@ -60,5 +67,10 @@ struct ContentView: View {
         }
         .background(Color.black)
         .ignoresSafeArea()
+        .onAppear {
+            print("✓ ContentView body appeared")
+            print("  - viewModel.fps: \(viewModel.fps)")
+            print("  - viewModel.entityCount: \(viewModel.entityCount)")
+        }
     }
 }
