@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kopis Engine - Web Edition</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 20px;
+            border-bottom: 2px solid #0f3460;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            background: linear-gradient(90deg, #00d4ff, #5b9bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+        }
+
+        .stat-item {
+            background: rgba(15, 52, 96, 0.5);
+            padding: 5px 12px;
+            border-radius: 5px;
+            border: 1px solid #0f3460;
+        }
+
+        .game-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            background: #0a0a0a;
+            border: 2px solid #0f3460;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+            border-radius: 5px;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+            transition: box-shadow 0.3s ease;
+        }
+
+        #gameCanvas:focus {
+            outline: none;
+            box-shadow: 0 0 40px rgba(0, 212, 255, 0.5);
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 25px;
+            border-radius: 10px;
+            border: 1px solid #0f3460;
+            backdrop-filter: blur(10px);
+        }
+
+        .controls h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #00d4ff;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            width: 150px;
+            margin: 0 auto;
+        }
+
+        .key {
+            background: rgba(15, 52, 96, 0.7);
+            border: 2px solid #0f3460;
+            border-radius: 5px;
+            padding: 8px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: scale(1);
+        }
+
+        .key.active {
+            background: rgba(0, 212, 255, 0.4);
+            border-color: #00d4ff;
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.6);
+            transform: scale(1.1);
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 1000;
+        }
+
+        .loading h2 {
+            margin-bottom: 20px;
+            color: #00d4ff;
+        }
+
+        .spinner {
+            border: 4px solid rgba(15, 52, 96, 0.3);
+            border-top: 4px solid #00d4ff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .info-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #0f3460;
+            backdrop-filter: blur(10px);
+            font-size: 12px;
+            min-width: 200px;
+        }
+
+        .info-panel h3 {
+            color: #00d4ff;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .info-panel p {
+            margin: 5px 0;
+            color: #ccc;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .stats {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .info-panel {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">⚔️ Kopis Engine</div>
+        <div class="stats">
+            <div class="stat-item">FPS: <span id="fps">60</span></div>
+            <div class="stat-item">Frame: <span id="frame">0</span></div>
+            <div class="stat-item">Entities: <span id="entities">0</span></div>
+            <div class="stat-item">Chunks: <span id="chunks">0</span></div>
+        </div>
+    </div>
+
+    <div class="game-container">
+        <div class="loading" id="loading">
+            <h2>Initializing Kopis Engine...</h2>
+            <div class="spinner"></div>
+        </div>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div class="info-panel">
+            <h3>Game Info</h3>
+            <p>Position: <span id="playerPos">(0, 0)</span></p>
+            <p>Health: <span id="playerHealth">100</span></p>
+            <p>NPCs: <span id="npcCount">0</span></p>
+            <p>Camera: <span id="cameraPos">(0, 0)</span></p>
+        </div>
+        <div class="controls">
+            <h3>Controls</h3>
+            <div class="controls-grid">
+                <div></div>
+                <div class="key" id="keyW">W</div>
+                <div></div>
+                <div class="key" id="keyA">A</div>
+                <div class="key" id="keyS">S</div>
+                <div class="key" id="keyD">D</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game Constants
+        const CHUNK_SIZE = 20;
+        const CELL_SIZE = 50;
+        const LOAD_RADIUS = 3;
+        const PLAYER_SPEED = 200;
+        const NPC_SPEED = 50;
+        const PLAYER_RADIUS = 12;
+        const NPC_RADIUS = 8;
+
+        // Game State
+        const game = {
+            canvas: null,
+            ctx: null,
+            player: null,
+            entities: [],
+            maze: null,
+            camera: { x: 0, y: 0 },
+            cameraTarget: { x: 0, y: 0 },
+            keys: {},
+            frame: 0,
+            lastTime: 0,
+            fps: 60,
+            fpsCounter: 0,
+            fpsTimer: 0,
+            motionTrails: new Map(), // Store motion trails for entities
+            particles: [] // Particle effects
+        };
+
+        // Sound Manager
+        class SoundManager {
+            constructor() {
+                this.audioContext = null;
+                this.enabled = false;
+                this.init();
+            }
+
+            init() {
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    this.enabled = true;
+                } catch (e) {
+                    console.warn('Audio not supported');
+                }
+            }
+
+            playTone(frequency, duration, volume = 0.3) {
+                if (!this.enabled || !this.audioContext) return;
+
+                const oscillator = this.audioContext.createOscillator();
+                const gainNode = this.audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(this.audioContext.destination);
+
+                oscillator.frequency.value = frequency;
+                oscillator.type = 'sine';
+
+                gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + duration);
+            }
+
+            playFootstep() {
+                this.playTone(400, 0.1, 0.2);
+            }
+
+            playCollision() {
+                this.playTone(600, 0.15, 0.4);
+            }
+
+            playMoveStart() {
+                this.playTone(200, 0.05, 0.3);
+            }
+        }
+
+        const soundManager = new SoundManager();
+
+        // Maze Chunk
+        class MazeChunk {
+            constructor(chunkX, chunkY, adjacentChunks = {}) {
+                this.chunkX = chunkX;
+                this.chunkY = chunkY;
+                this.walls = new Set();
+                this.paths = new Set();
+                this.connectionPoints = this.getConnectionPoints();
+                this.generateChunk(adjacentChunks);
+            }
+
+            getConnectionPoints() {
+                const seed = this.hashCode(`${this.chunkX}_${this.chunkY}`);
+                const rng = this.seededRandom(seed);
+                const connections = {};
+                const width = CHUNK_SIZE;
+                const height = CHUNK_SIZE;
+
+                // North edge
+                const northCount = rng(1, 3);
+                const northPoints = this.sample(range(1, width - 1), Math.min(northCount, width - 2), rng);
+                connections.north = northPoints.map(x => [x, 0]);
+
+                // South edge
+                const southCount = rng(1, 3);
+                const southPoints = this.sample(range(1, width - 1), Math.min(southCount, width - 2), rng);
+                connections.south = southPoints.map(x => [x, height - 1]);
+
+                // West edge
+                const westCount = rng(1, 3);
+                const westPoints = this.sample(range(1, height - 1), Math.min(westCount, height - 2), rng);
+                connections.west = westPoints.map(y => [0, y]);
+
+                // East edge
+                const eastCount = rng(1, 3);
+                const eastPoints = this.sample(range(1, height - 1), Math.min(eastCount, height - 2), rng);
+                connections.east = eastPoints.map(y => [width - 1, y]);
+
+                return connections;
+            }
+
+            getMatchingConnectionPoints(direction, adjacentChunk) {
+                const width = CHUNK_SIZE;
+                const height = CHUNK_SIZE;
+
+                if (direction === 'north') {
+                    return adjacentChunk.connectionPoints.south?.map(([x, y]) => [x, 0]) || this.connectionPoints.north || [];
+                } else if (direction === 'south') {
+                    return adjacentChunk.connectionPoints.north?.map(([x, y]) => [x, height - 1]) || this.connectionPoints.south || [];
+                } else if (direction === 'west') {
+                    return adjacentChunk.connectionPoints.east?.map(([x, y]) => [0, y]) || this.connectionPoints.west || [];
+                } else if (direction === 'east') {
+                    return adjacentChunk.connectionPoints.west?.map(([x, y]) => [width - 1, y]) || this.connectionPoints.east || [];
+                }
+                return [];
+            }
+
+            generateChunk(adjacentChunks) {
+                const seed = this.hashCode(`${this.chunkX}_${this.chunkY}`);
+                const rng = this.seededRandom(seed);
+                const width = CHUNK_SIZE;
+                const height = CHUNK_SIZE;
+                const grid = Array(height).fill(null).map(() => Array(width).fill(1));
+
+                // Collect connection points
+                const connectionCells = new Set();
+                
+                ['north', 'south', 'west', 'east'].forEach(direction => {
+                    if (adjacentChunks[direction]) {
+                        const matching = this.getMatchingConnectionPoints(direction, adjacentChunks[direction]);
+                        matching.forEach(([x, y]) => connectionCells.add(`${x},${y}`));
+                    } else {
+                        (this.connectionPoints[direction] || []).forEach(([x, y]) => connectionCells.add(`${x},${y}`));
+                    }
+                });
+
+                // Start from first connection point or (1, 1)
+                const startPos = connectionCells.size > 0 
+                    ? connectionCells.values().next().value.split(',').map(Number)
+                    : [1, 1];
+                const stack = [[...startPos]];
+                grid[startPos[1]][startPos[0]] = 0;
+
+                // Ensure all connection points are paths
+                connectionCells.forEach(cell => {
+                    const [x, y] = cell.split(',').map(Number);
+                    grid[y][x] = 0;
+                });
+
+                // Generate maze
+                const directions = [[0, -2], [2, 0], [0, 2], [-2, 0]];
+                while (stack.length > 0) {
+                    const [x, y] = stack[stack.length - 1];
+                    const neighbors = [];
+
+                    for (const [dx, dy] of directions) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[ny][nx] === 1) {
+                            neighbors.push([nx, ny, x + Math.floor(dx / 2), y + Math.floor(dy / 2)]);
+                        }
+                    }
+
+                    if (neighbors.length > 0) {
+                        const [nx, ny, wx, wy] = neighbors[Math.floor(rng() * neighbors.length)];
+                        grid[ny][nx] = 0;
+                        grid[wy][wx] = 0;
+                        stack.push([nx, ny]);
+                    } else {
+                        stack.pop();
+                    }
+                }
+
+                // Convert to sets
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        if (grid[y][x] === 1) {
+                            this.walls.add(`${x},${y}`);
+                        } else {
+                            this.paths.add(`${x},${y}`);
+                        }
+                    }
+                }
+            }
+
+            hashCode(str) {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash;
+                }
+                return Math.abs(hash);
+            }
+
+            seededRandom(seed) {
+                let value = seed;
+                return (min = 0, max = 1) => {
+                    value = (value * 9301 + 49297) % 233280;
+                    const rnd = value / 233280;
+                    if (min === 0 && max === 1) return rnd;
+                    return Math.floor(rnd * (max - min + 1)) + min;
+                };
+            }
+
+            sample(arr, n, rng) {
+                const result = [];
+                const copy = [...arr];
+                for (let i = 0; i < n && copy.length > 0; i++) {
+                    const index = Math.floor(rng() * copy.length);
+                    result.push(copy.splice(index, 1)[0]);
+                }
+                return result.sort((a, b) => a - b);
+            }
+        }
+
+        function range(start, end) {
+            return Array.from({ length: end - start }, (_, i) => start + i);
+        }
+
+        // Infinite Maze
+        class InfiniteMaze {
+            constructor() {
+                this.chunks = new Map();
+                this.lastCleanupPos = { x: 0, y: 0 };
+            }
+
+            getChunkCoords(worldX, worldY) {
+                const cellX = Math.floor(worldX / CELL_SIZE);
+                const cellY = Math.floor(worldY / CELL_SIZE);
+                let chunkX = Math.floor(cellX / CHUNK_SIZE);
+                let chunkY = Math.floor(cellY / CHUNK_SIZE);
+                
+                if (cellX < 0) chunkX = Math.floor((cellX - CHUNK_SIZE + 1) / CHUNK_SIZE);
+                if (cellY < 0) chunkY = Math.floor((cellY - CHUNK_SIZE + 1) / CHUNK_SIZE);
+                
+                return [chunkX, chunkY];
+            }
+
+            getOrCreateChunk(chunkX, chunkY) {
+                const key = `${chunkX},${chunkY}`;
+                if (!this.chunks.has(key)) {
+                    const adjacentChunks = {};
+                    const northKey = `${chunkX},${chunkY - 1}`;
+                    const southKey = `${chunkX},${chunkY + 1}`;
+                    const westKey = `${chunkX - 1},${chunkY}`;
+                    const eastKey = `${chunkX + 1},${chunkY}`;
+
+                    if (this.chunks.has(northKey)) adjacentChunks.north = this.chunks.get(northKey);
+                    if (this.chunks.has(southKey)) adjacentChunks.south = this.chunks.get(southKey);
+                    if (this.chunks.has(westKey)) adjacentChunks.west = this.chunks.get(westKey);
+                    if (this.chunks.has(eastKey)) adjacentChunks.east = this.chunks.get(eastKey);
+
+                    this.chunks.set(key, new MazeChunk(chunkX, chunkY, adjacentChunks));
+                }
+                return this.chunks.get(key);
+            }
+
+            ensureChunksLoaded(worldX, worldY) {
+                const [centerX, centerY] = this.getChunkCoords(worldX, worldY);
+                for (let dx = -LOAD_RADIUS; dx <= LOAD_RADIUS; dx++) {
+                    for (let dy = -LOAD_RADIUS; dy <= LOAD_RADIUS; dy++) {
+                        this.getOrCreateChunk(centerX + dx, centerY + dy);
+                    }
+                }
+            }
+
+            checkCollision(x, y, radius) {
+                this.ensureChunksLoaded(x, y);
+                const cellX = Math.floor(x / CELL_SIZE);
+                const cellY = Math.floor(y / CELL_SIZE);
+
+                // Check surrounding cells for walls
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        const checkCellX = cellX + dx;
+                        const checkCellY = cellY + dy;
+
+                        const [chunkX, chunkY] = this.getChunkCoords(checkCellX * CELL_SIZE, checkCellY * CELL_SIZE);
+                        const chunk = this.getOrCreateChunk(chunkX, chunkY);
+
+                        const localX = ((checkCellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        const localY = ((checkCellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+
+                        if (chunk.walls.has(`${localX},${localY}`)) {
+                            // Wall rectangle bounds
+                            const wallLeft = checkCellX * CELL_SIZE;
+                            const wallRight = wallLeft + CELL_SIZE;
+                            const wallTop = checkCellY * CELL_SIZE;
+                            const wallBottom = wallTop + CELL_SIZE;
+
+                            // Circle-rectangle collision detection
+                            // Find closest point on rectangle to circle center
+                            const closestX = Math.max(wallLeft, Math.min(x, wallRight));
+                            const closestY = Math.max(wallTop, Math.min(y, wallBottom));
+
+                            // Calculate distance from circle center to closest point
+                            const distX = x - closestX;
+                            const distY = y - closestY;
+                            const distSquared = distX * distX + distY * distY;
+
+                            // Check if distance is less than radius
+                            if (distSquared < radius * radius) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+
+            getWallRects(cameraX, cameraY, viewportWidth, viewportHeight) {
+                this.ensureChunksLoaded(cameraX, cameraY);
+                const rects = [];
+
+                const viewportMinX = cameraX - viewportWidth / 2;
+                const viewportMaxX = cameraX + viewportWidth / 2;
+                const viewportMinY = cameraY - viewportHeight / 2;
+                const viewportMaxY = cameraY + viewportHeight / 2;
+
+                const minCellX = Math.floor(viewportMinX / CELL_SIZE) - 1;
+                const maxCellX = Math.floor(viewportMaxX / CELL_SIZE) + 1;
+                const minCellY = Math.floor(viewportMinY / CELL_SIZE) - 1;
+                const maxCellY = Math.floor(viewportMaxY / CELL_SIZE) + 1;
+
+                for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
+                    for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+                        const [chunkX, chunkY] = this.getChunkCoords(cellX * CELL_SIZE, cellY * CELL_SIZE);
+                        const chunk = this.getOrCreateChunk(chunkX, chunkY);
+
+                        const localX = ((cellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        const localY = ((cellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+
+                        if (chunk.walls.has(`${localX},${localY}`)) {
+                            rects.push({
+                                x: cellX * CELL_SIZE,
+                                y: cellY * CELL_SIZE,
+                                width: CELL_SIZE,
+                                height: CELL_SIZE
+                            });
+                        }
+                    }
+                }
+
+                return rects;
+            }
+        }
+
+        // Initialize Game
+        function init() {
+            game.canvas = document.getElementById('gameCanvas');
+            game.ctx = game.canvas.getContext('2d');
+            game.maze = new InfiniteMaze();
+
+            // Create player
+            game.player = {
+                id: 'player',
+                x: 0,
+                y: 0,
+                vx: 0,
+                vy: 0,
+                health: 100,
+                radius: PLAYER_RADIUS,
+                lastX: 0,
+                lastY: 0,
+                trail: [],
+                initialized: false
+            };
+
+            // Find valid starting position (center of a path cell) - RANDOM
+            let startFound = false;
+            
+            // First, ensure chunks are loaded around origin
+            game.maze.ensureChunksLoaded(0, 0);
+            
+            // Collect all valid starting positions first
+            const validPositions = [];
+            const searchRadius = 20;
+            
+            for (let cellX = -searchRadius; cellX <= searchRadius; cellX++) {
+                for (let cellY = -searchRadius; cellY <= searchRadius; cellY++) {
+                    // Test cell center position
+                    const testX = cellX * CELL_SIZE + CELL_SIZE / 2;
+                    const testY = cellY * CELL_SIZE + CELL_SIZE / 2;
+                    
+                    // Check collision with proper margin
+                    if (!game.maze.checkCollision(testX, testY, PLAYER_RADIUS + 2)) {
+                        // Double-check by verifying it's actually a path cell
+                        const [chunkX, chunkY] = game.maze.getChunkCoords(cellX * CELL_SIZE, cellY * CELL_SIZE);
+                        const chunk = game.maze.getOrCreateChunk(chunkX, chunkY);
+                        const localX = ((cellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        const localY = ((cellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                        
+                        // Verify it's a path, not a wall
+                        if (chunk.paths.has(`${localX},${localY}`) && !chunk.walls.has(`${localX},${localY}`)) {
+                            validPositions.push({ x: testX, y: testY });
+                        }
+                    }
+                }
+            }
+            
+            // Randomly select from valid positions
+            if (validPositions.length > 0) {
+                const randomIndex = Math.floor(Math.random() * validPositions.length);
+                const selectedPos = validPositions[randomIndex];
+                game.player.x = selectedPos.x;
+                game.player.y = selectedPos.y;
+                startFound = true;
+            }
+            
+            // Fallback: if still not found, try more aggressive search
+            if (!startFound) {
+                console.warn('Could not find valid starting position, using fallback search');
+                const fallbackPositions = [];
+                for (let cellX = -30; cellX <= 30; cellX++) {
+                    for (let cellY = -30; cellY <= 30; cellY++) {
+                        const testX = cellX * CELL_SIZE + CELL_SIZE / 2;
+                        const testY = cellY * CELL_SIZE + CELL_SIZE / 2;
+                        
+                        if (!game.maze.checkCollision(testX, testY, PLAYER_RADIUS + 5)) {
+                            fallbackPositions.push({ x: testX, y: testY });
+                        }
+                    }
+                }
+                
+                if (fallbackPositions.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * fallbackPositions.length);
+                    const selectedPos = fallbackPositions[randomIndex];
+                    game.player.x = selectedPos.x;
+                    game.player.y = selectedPos.y;
+                    startFound = true;
+                }
+            }
+            
+            // Final safety check
+            if (!startFound || game.maze.checkCollision(game.player.x, game.player.y, PLAYER_RADIUS)) {
+                console.error('Failed to find valid starting position! Using random safe position');
+                // Try to find ANY safe position
+                let safeFound = false;
+                for (let attempts = 0; attempts < 100 && !safeFound; attempts++) {
+                    const randomX = (Math.random() - 0.5) * 1000;
+                    const randomY = (Math.random() - 0.5) * 1000;
+                    if (!game.maze.checkCollision(randomX, randomY, PLAYER_RADIUS + 10)) {
+                        game.player.x = randomX;
+                        game.player.y = randomY;
+                        safeFound = true;
+                    }
+                }
+                if (!safeFound) {
+                    game.player.x = CELL_SIZE / 2;
+                    game.player.y = CELL_SIZE / 2;
+                }
+            }
+
+            game.entities.push(game.player);
+
+            // Create NPCs at valid positions
+            let npcCount = 0;
+            for (let i = 0; i < 10 && npcCount < 5; i++) {
+                const npcX = game.player.x + (i + 1) * 3 * CELL_SIZE;
+                const npcY = game.player.y + (i % 2 === 0 ? 1 : -1) * CELL_SIZE;
+                
+                // Only add NPC if position is valid (not in wall)
+                if (!game.maze.checkCollision(npcX, npcY, NPC_RADIUS)) {
+                    game.entities.push({
+                        id: `npc_${npcCount}`,
+                        x: npcX,
+                        y: npcY,
+                        vx: 0,
+                        vy: 0,
+                        health: 50,
+                        radius: NPC_RADIUS,
+                        lastX: npcX,
+                        lastY: npcY,
+                        trail: [],
+                        initialized: true
+                    });
+                    npcCount++;
+                }
+            }
+
+            game.camera.x = game.player.x;
+            game.camera.y = game.player.y;
+            game.cameraTarget.x = game.player.x;
+            game.cameraTarget.y = game.player.y;
+
+            // Input handling
+            document.addEventListener('keydown', (e) => {
+                game.keys[e.key.toLowerCase()] = true;
+                updateKeyDisplay();
+            });
+
+            document.addEventListener('keyup', (e) => {
+                game.keys[e.key.toLowerCase()] = false;
+                updateKeyDisplay();
+            });
+
+            // Hide loading
+            document.getElementById('loading').style.display = 'none';
+
+            // Make canvas focusable for better keyboard input
+            game.canvas.tabIndex = 0;
+            game.canvas.focus();
+            game.canvas.addEventListener('click', () => game.canvas.focus());
+
+            // Start game loop
+            game.lastTime = performance.now();
+            gameLoop();
+        }
+
+        function updateKeyDisplay() {
+            document.getElementById('keyW').classList.toggle('active', game.keys['w']);
+            document.getElementById('keyA').classList.toggle('active', game.keys['a']);
+            document.getElementById('keyS').classList.toggle('active', game.keys['s']);
+            document.getElementById('keyD').classList.toggle('active', game.keys['d']);
+        }
+
+        function update(deltaTime) {
+            // Player input
+            let vx = 0, vy = 0;
+            if (game.keys['w']) vy -= PLAYER_SPEED;
+            if (game.keys['s']) vy += PLAYER_SPEED;
+            if (game.keys['a']) vx -= PLAYER_SPEED;
+            if (game.keys['d']) vx += PLAYER_SPEED;
+
+            // Normalize diagonal
+            if (vx !== 0 && vy !== 0) {
+                vx *= 0.707;
+                vy *= 0.707;
+            }
+
+            const wasMoving = Math.abs(game.player.vx) > 0.1 || Math.abs(game.player.vy) > 0.1;
+            game.player.vx = vx;
+            game.player.vy = vy;
+
+            // Sound effects
+            const isMoving = Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1;
+            if (isMoving && !wasMoving) {
+                soundManager.playMoveStart();
+            } else if (isMoving && Math.random() < 0.05) {
+                soundManager.playFootstep();
+            }
+
+            // Update player position with better collision handling
+            const newX = game.player.x + game.player.vx * deltaTime;
+            const newY = game.player.y + game.player.vy * deltaTime;
+
+            let collisionX = false;
+            let collisionY = false;
+
+            // Check X movement
+            if (!game.maze.checkCollision(newX, game.player.y, PLAYER_RADIUS)) {
+                game.player.x = newX;
+            } else {
+                collisionX = true;
+                game.player.vx = 0;
+            }
+
+            // Check Y movement
+            if (!game.maze.checkCollision(game.player.x, newY, PLAYER_RADIUS)) {
+                game.player.y = newY;
+            } else {
+                collisionY = true;
+                game.player.vy = 0;
+            }
+
+            // Play collision sound and particles if collision occurred
+            if ((collisionX || collisionY) && wasMoving) {
+                soundManager.playCollision();
+                // Add collision particles
+                for (let i = 0; i < 5; i++) {
+                    game.particles.push({
+                        x: game.player.x,
+                        y: game.player.y,
+                        vx: (Math.random() - 0.5) * 100,
+                        vy: (Math.random() - 0.5) * 100,
+                        alpha: 1.0,
+                        life: 0.3,
+                        size: 3,
+                        color: '#ffffff'
+                    });
+                }
+            }
+
+            // Update NPCs
+            game.entities.forEach(entity => {
+                if (entity.id !== 'player' && entity.id.startsWith('npc')) {
+                    const dx = game.player.x - entity.x;
+                    const dy = game.player.y - entity.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance > 0) {
+                        const vx = (dx / distance) * NPC_SPEED;
+                        const vy = (dy / distance) * NPC_SPEED;
+                        entity.vx = vx;
+                        entity.vy = vy;
+
+                        const newX = entity.x + vx * deltaTime;
+                        const newY = entity.y + vy * deltaTime;
+
+                        // Check X movement
+                        if (!game.maze.checkCollision(newX, entity.y, NPC_RADIUS)) {
+                            entity.x = newX;
+                        } else {
+                            entity.vx = 0;
+                        }
+
+                        // Check Y movement
+                        if (!game.maze.checkCollision(entity.x, newY, NPC_RADIUS)) {
+                            entity.y = newY;
+                        } else {
+                            entity.vy = 0;
+                        }
+                    } else {
+                        entity.vx = 0;
+                        entity.vy = 0;
+                    }
+                }
+            });
+
+            // Store previous positions for trails
+            game.entities.forEach(entity => {
+                entity.lastX = entity.x;
+                entity.lastY = entity.y;
+            });
+
+            // Update camera with smoother interpolation
+            game.cameraTarget.x = game.player.x;
+            game.cameraTarget.y = game.player.y;
+            const cameraLerp = 0.15; // Smoother camera following
+            game.camera.x += (game.cameraTarget.x - game.camera.x) * cameraLerp;
+            game.camera.y += (game.cameraTarget.y - game.camera.y) * cameraLerp;
+
+            // Update motion trails
+            game.entities.forEach(entity => {
+                if (!entity) return;
+                if (!entity.trail) entity.trail = [];
+                const vx = entity.vx || 0;
+                const vy = entity.vy || 0;
+                const speed = Math.sqrt(vx * vx + vy * vy);
+                if (speed > 10 && entity.x !== undefined && entity.y !== undefined) {
+                    entity.trail.push({
+                        x: entity.x,
+                        y: entity.y,
+                        alpha: 1.0,
+                        time: performance.now()
+                    });
+                }
+                // Remove old trail points
+                entity.trail = entity.trail.filter(point => {
+                    if (!point) return false;
+                    point.alpha = (point.alpha || 1.0) - 0.05;
+                    return point.alpha > 0 && (performance.now() - (point.time || 0)) < 500;
+                });
+            });
+
+            // Update particles
+            if (!game.particles) game.particles = [];
+            game.particles = game.particles.filter(particle => {
+                if (!particle) return false;
+                particle.x += (particle.vx || 0) * deltaTime;
+                particle.y += (particle.vy || 0) * deltaTime;
+                particle.alpha = (particle.alpha || 1.0) - 0.02;
+                particle.life = (particle.life || 0.3) - deltaTime;
+                return particle.alpha > 0 && particle.life > 0;
+            });
+
+            // Update stats
+            game.frame++;
+            game.fpsCounter++;
+            if (performance.now() - game.fpsTimer >= 1000) {
+                game.fps = game.fpsCounter;
+                game.fpsCounter = 0;
+                game.fpsTimer = performance.now();
+            }
+        }
+
+        function render() {
+            const ctx = game.ctx;
+            const canvas = game.canvas;
+
+            // World to screen conversion (define first before use)
+            const worldToScreen = (wx, wy) => ({
+                x: wx - game.camera.x + canvas.width / 2,
+                y: wy - game.camera.y + canvas.height / 2
+            });
+
+            // Clear with subtle grid effect
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw subtle grid for depth
+            ctx.strokeStyle = 'rgba(20, 20, 30, 0.3)';
+            ctx.lineWidth = 1;
+            const gridSize = CELL_SIZE;
+            const startX = Math.floor((game.camera.x - canvas.width / 2) / gridSize) * gridSize;
+            const startY = Math.floor((game.camera.y - canvas.height / 2) / gridSize) * gridSize;
+            
+            for (let x = startX; x < game.camera.x + canvas.width / 2 + gridSize; x += gridSize) {
+                const screen = worldToScreen(x, 0);
+                if (screen.x >= 0 && screen.x <= canvas.width) {
+                    ctx.beginPath();
+                    ctx.moveTo(screen.x, 0);
+                    ctx.lineTo(screen.x, canvas.height);
+                    ctx.stroke();
+                }
+            }
+            
+            for (let y = startY; y < game.camera.y + canvas.height / 2 + gridSize; y += gridSize) {
+                const screen = worldToScreen(0, y);
+                if (screen.y >= 0 && screen.y <= canvas.height) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, screen.y);
+                    ctx.lineTo(canvas.width, screen.y);
+                    ctx.stroke();
+                }
+            }
+
+            // Draw maze walls with better visuals
+            const walls = game.maze.getWallRects(game.camera.x, game.camera.y, canvas.width, canvas.height);
+            walls.forEach(wall => {
+                const screen = worldToScreen(wall.x, wall.y);
+                if (screen.x > -CELL_SIZE && screen.x < canvas.width + CELL_SIZE &&
+                    screen.y > -CELL_SIZE && screen.y < canvas.height + CELL_SIZE) {
+                    // Wall shadow
+                    ctx.fillStyle = '#1a1a1a';
+                    ctx.fillRect(screen.x + 2, screen.y + 2, wall.width, wall.height);
+                    // Main wall
+                    ctx.fillStyle = '#3c3c50';
+                    ctx.fillRect(screen.x, screen.y, wall.width, wall.height);
+                    // Wall border
+                    ctx.strokeStyle = '#282838';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(screen.x, screen.y, wall.width, wall.height);
+                    // Highlight
+                    ctx.strokeStyle = '#4a4a60';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(screen.x, screen.y);
+                    ctx.lineTo(screen.x + wall.width, screen.y);
+                    ctx.stroke();
+                }
+            });
+
+            // Draw motion trails
+            game.entities.forEach(entity => {
+                if (!entity || !entity.trail || entity.trail.length < 2) return;
+                
+                ctx.save();
+                ctx.strokeStyle = entity.id === 'player' ? '#0066ff' : '#ff0000';
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                
+                let firstPoint = true;
+                entity.trail.forEach((point, index) => {
+                    if (!point || point.x === undefined || point.y === undefined) return;
+                    const screen = worldToScreen(point.x, point.y);
+                    ctx.globalAlpha = (point.alpha || 1.0) * 0.3;
+                    if (firstPoint) {
+                        ctx.moveTo(screen.x, screen.y);
+                        firstPoint = false;
+                    } else {
+                        ctx.lineTo(screen.x, screen.y);
+                    }
+                });
+                
+                ctx.stroke();
+                ctx.restore();
+            });
+
+            // Draw particles
+            if (game.particles && game.particles.length > 0) {
+                game.particles.forEach(particle => {
+                    if (!particle || particle.x === undefined || particle.y === undefined) return;
+                    const screen = worldToScreen(particle.x, particle.y);
+                    if (screen.x < -20 || screen.x > canvas.width + 20 ||
+                        screen.y < -20 || screen.y > canvas.height + 20) return;
+                    
+                    ctx.save();
+                    ctx.globalAlpha = particle.alpha || 1.0;
+                    ctx.fillStyle = particle.color || '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(screen.x, screen.y, particle.size || 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+            }
+
+            // Draw entities with enhanced graphics
+            game.entities.forEach(entity => {
+                if (!entity || entity.x === undefined || entity.y === undefined) return;
+                
+                const screen = worldToScreen(entity.x, entity.y);
+                if (screen.x < -100 || screen.x > canvas.width + 100 ||
+                    screen.y < -100 || screen.y > canvas.height + 100) return;
+
+                const isPlayer = entity.id === 'player';
+                const color = isPlayer ? '#0066ff' : '#ff0000';
+                const radius = entity.radius || (isPlayer ? PLAYER_RADIUS : NPC_RADIUS);
+                const vx = entity.vx || 0;
+                const vy = entity.vy || 0;
+                const speed = Math.sqrt(vx * vx + vy * vy);
+
+                // Draw shadow
+                ctx.save();
+                ctx.globalAlpha = 0.3;
+                ctx.beginPath();
+                ctx.ellipse(screen.x + 2, screen.y + 2, radius * 0.8, radius * 0.4, 0, 0, Math.PI * 2);
+                ctx.fillStyle = '#000000';
+                ctx.fill();
+                ctx.restore();
+
+                // Draw glow effect when moving
+                if (speed > 10) {
+                    ctx.save();
+                    const glowSize = radius + (speed / 10);
+                    const gradient = ctx.createRadialGradient(screen.x, screen.y, radius, screen.x, screen.y, glowSize);
+                    gradient.addColorStop(0, color + '80');
+                    gradient.addColorStop(1, color + '00');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(screen.x, screen.y, glowSize, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                // Draw entity body
+                ctx.beginPath();
+                ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
+                const bodyGradient = ctx.createRadialGradient(
+                    screen.x - radius * 0.3, screen.y - radius * 0.3, 0,
+                    screen.x, screen.y, radius
+                );
+                bodyGradient.addColorStop(0, isPlayer ? '#3399ff' : '#ff3333');
+                bodyGradient.addColorStop(1, color);
+                ctx.fillStyle = bodyGradient;
+                ctx.fill();
+
+                // Draw border
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Draw inner highlight
+                ctx.strokeStyle = isPlayer ? '#66ccff' : '#ff6666';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(screen.x - radius * 0.3, screen.y - radius * 0.3, radius * 0.6, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Draw direction indicator when moving
+                if (speed > 5 && vx !== undefined && vy !== undefined) {
+                    const angle = Math.atan2(vy, vx);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(screen.x, screen.y);
+                    ctx.lineTo(
+                        screen.x + Math.cos(angle) * (radius + 5),
+                        screen.y + Math.sin(angle) * (radius + 5)
+                    );
+                    ctx.stroke();
+                }
+
+                // Draw label with background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(screen.x - 25, screen.y - radius - 25, 50, 15);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '11px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(entity.id, screen.x, screen.y - radius - 13);
+            });
+
+            // Update UI
+            document.getElementById('fps').textContent = game.fps;
+            document.getElementById('frame').textContent = game.frame;
+            document.getElementById('entities').textContent = game.entities.length;
+            document.getElementById('chunks').textContent = game.maze.chunks.size;
+            document.getElementById('playerPos').textContent = `(${Math.floor(game.player.x)}, ${Math.floor(game.player.y)})`;
+            document.getElementById('playerHealth').textContent = game.player.health;
+            document.getElementById('npcCount').textContent = game.entities.filter(e => e.id.startsWith('npc')).length;
+            document.getElementById('cameraPos').textContent = `(${Math.floor(game.camera.x)}, ${Math.floor(game.camera.y)})`;
+        }
+
+        function gameLoop() {
+            const currentTime = performance.now();
+            let deltaTime = (currentTime - game.lastTime) / 1000;
+            
+            // Cap delta time to prevent large jumps
+            deltaTime = Math.min(deltaTime, 0.1);
+            
+            game.lastTime = currentTime;
+
+            update(deltaTime);
+            render();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game when page loads
+        window.addEventListener('load', () => {
+            setTimeout(init, 500); // Small delay for visual effect
+        });
+    </script>
+</body>
+</html>
+
