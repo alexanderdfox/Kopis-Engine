@@ -2023,6 +2023,7 @@ class PygameRenderer:
         # Single shared Game of Life instance for all walls
         self.shared_game_of_life = GameOfLife(seed=42)  # Fixed seed so all walls use same pattern
         self.game_of_life_update_counter = 0  # Update Game of Life every N frames
+        self.game_of_life_reset_counter = 0  # Counter for resetting Game of Life every 30 frames
         self.game_of_life_surface_cache = None  # Cache rendered pattern to avoid redrawing
         self.game_of_life_cache_frame = -1  # Track when cache was created
         
@@ -2191,20 +2192,14 @@ class PygameRenderer:
                         # Cells at top are brighter (fresh blood), cells at bottom are darker (dried blood)
                         intensity = 1.0 - (y / gol_height) * 0.4  # Darker as we go down
                         
-                        # Doom color palette: dark reds and browns
-                        # Base blood red: (139, 0, 0) to (178, 34, 34) to (101, 67, 33)
-                        blood_red = int(139 + (y / gol_height) * 39)  # 139-178 (bright to darker red)
-                        blood_green = int((y / gol_height) * 34)  # 0-34 (red to brown)
-                        blood_blue = int((y / gol_height) * 33)  # 0-33 (red to brown)
-                        
-                        # Simplified color calculation for performance (no expensive hash)
-                        # Use simple modulo for variation instead of MD5 hash
-                        variation = ((x * 7 + y * 11) % 31) - 15  # Deterministic variation
-                        
-                        # Doom blood red colors: bright red at top, dark brown/red at bottom
-                        blood_red = max(120, min(200, blood_red + variation))
-                        blood_green = max(0, min(60, blood_green + variation // 2))
-                        blood_blue = max(0, min(50, blood_blue + variation // 3))
+                        # Generate random color for each pixel based on position
+                        pixel_seed = hash((x, y, 'face')) % 1000000
+                        rng_r = (pixel_seed * 9301 + 49297) % 233280
+                        rng_g = (pixel_seed * 7919 + 49307) % 233280
+                        rng_b = (pixel_seed * 6997 + 49317) % 233280
+                        blood_red = 50 + (rng_r % 206)  # 50-255
+                        blood_green = 50 + (rng_g % 206)  # 50-255
+                        blood_blue = 50 + (rng_b % 206)  # 50-255
                         
                         blood_color = (blood_red, blood_green, blood_blue)
                         
@@ -2395,11 +2390,14 @@ class PygameRenderer:
                                         screen_x = int(x * self.width / gol_width)
                                         screen_y = ceiling_top + int((gol_height - 1 - y) * ceiling_height / gol_height)  # Inverted for ceiling
                                         if ceiling_top <= screen_y < ceiling_bottom and 0 <= screen_x < self.width:
-                                            variation = ((x * 7 + y * 11) % 31) - 15
-                                            # Ceiling blood: darker, more dried (inverted y for dripping effect)
-                                            blood_red = max(100, min(180, int(139 + ((gol_height - 1 - y) / gol_height) * 39 + variation)))
-                                            blood_green = max(0, min(60, int(((gol_height - 1 - y) / gol_height) * 34 + variation // 2)))
-                                            blood_blue = max(0, min(50, int(((gol_height - 1 - y) / gol_height) * 33 + variation // 3)))
+                                            # Generate random color for each pixel based on position
+                                            pixel_seed = hash((x, y, 'ceiling')) % 1000000
+                                            rng_r = (pixel_seed * 9301 + 49297) % 233280
+                                            rng_g = (pixel_seed * 7919 + 49307) % 233280
+                                            rng_b = (pixel_seed * 6997 + 49317) % 233280
+                                            blood_red = 50 + (rng_r % 206)  # 50-255
+                                            blood_green = 50 + (rng_g % 206)  # 50-255
+                                            blood_blue = 50 + (rng_b % 206)  # 50-255
                                             
                                             # Draw with sample rate width/height to fill gaps
                                             pygame.draw.rect(self.screen, (blood_red, blood_green, blood_blue),
@@ -2420,11 +2418,14 @@ class PygameRenderer:
                                         screen_x = int(x * self.width / gol_width)
                                         screen_y = floor_top + int(y * floor_height / gol_height)
                                         if floor_top <= screen_y < floor_bottom and 0 <= screen_x < self.width:
-                                            variation = ((x * 7 + y * 11) % 31) - 15
-                                            # Floor blood: brighter at top (fresh), darker at bottom (dried)
-                                            blood_red = max(120, min(200, int(139 + (y / gol_height) * 39 + variation)))
-                                            blood_green = max(0, min(60, int((y / gol_height) * 34 + variation // 2)))
-                                            blood_blue = max(0, min(50, int((y / gol_height) * 33 + variation // 3)))
+                                            # Generate random color for each pixel based on position
+                                            pixel_seed = hash((x, y, 'floor')) % 1000000
+                                            rng_r = (pixel_seed * 9301 + 49297) % 233280
+                                            rng_g = (pixel_seed * 7919 + 49307) % 233280
+                                            rng_b = (pixel_seed * 6997 + 49317) % 233280
+                                            blood_red = 50 + (rng_r % 206)  # 50-255
+                                            blood_green = 50 + (rng_g % 206)  # 50-255
+                                            blood_blue = 50 + (rng_b % 206)  # 50-255
                                             
                                             # Draw with sample rate width/height to fill gaps
                                             pygame.draw.rect(self.screen, (blood_red, blood_green, blood_blue),
@@ -2506,10 +2507,14 @@ class PygameRenderer:
                                         if pattern[y, pattern_x]:
                                             screen_y = draw_start + (y * wall_height) / gol_height
                                             if draw_start <= screen_y < draw_end:
-                                                variation = ((x * 7 + y * 11) % 31) - 15
-                                                blood_red = max(120, min(200, int(139 + (y / gol_height) * 39 + variation)))
-                                                blood_green = max(0, min(60, int((y / gol_height) * 34 + variation // 2)))
-                                                blood_blue = max(0, min(50, int((y / gol_height) * 33 + variation // 3)))
+                                                # Generate random color for each pixel based on position
+                                                pixel_seed = hash((pattern_x, y, 'wall')) % 1000000
+                                                rng_r = (pixel_seed * 9301 + 49297) % 233280
+                                                rng_g = (pixel_seed * 7919 + 49307) % 233280
+                                                rng_b = (pixel_seed * 6997 + 49317) % 233280
+                                                blood_red = 50 + (rng_r % 206)  # 50-255
+                                                blood_green = 50 + (rng_g % 206)  # 50-255
+                                                blood_blue = 50 + (rng_b % 206)  # 50-255
                                                 
                                                 # Draw blood pixel with width matching raycast skip
                                                 pygame.draw.rect(self.screen, (blood_red, blood_green, blood_blue),
@@ -2527,6 +2532,16 @@ class PygameRenderer:
                     if self.shared_game_of_life:
                         self.shared_game_of_life.update()
                     self.game_of_life_surface_cache = None
+                
+                # Reset Game of Life with new random pattern every 30 frames
+                self.game_of_life_reset_counter += 1
+                if self.game_of_life_reset_counter >= 30:
+                    self.game_of_life_reset_counter = 0
+                    # Generate new random seed for fresh pattern
+                    import random
+                    new_seed = random.randint(0, 1000000)
+                    self.shared_game_of_life = GameOfLife(seed=new_seed)
+                    self.game_of_life_surface_cache = None  # Clear cache on reset
                 
                 # Raycasting complete - old polygon rendering removed
             else:
