@@ -401,9 +401,9 @@
             touch: { x: 0, y: 0, worldX: 0, worldY: 0, active: false, touchId: null },
             frame: 0,
             lastTime: 0,
-            fps: 60,
+            fps: 0,
             fpsCounter: 0,
-            fpsTimer: 0,
+            fpsTimer: performance.now(),
             motionTrails: new Map(),
             particles: [],
             gameOfLife: null, // Shared Game of Life instance
@@ -1366,6 +1366,18 @@
                     game.canvas.width = 800;
                     game.canvas.height = 600;
                 }
+                
+                // Reset virtual mouse position when fullscreen changes to prevent wrapping issues
+                // Get current mouse position relative to canvas
+                const rect = game.canvas.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    // Use center of canvas as initial position
+                    virtualMouseX = game.canvas.width / 2;
+                    virtualMouseY = game.canvas.height / 2;
+                    lastMouseX = rect.left + virtualMouseX;
+                    lastMouseY = rect.top + virtualMouseY;
+                    isFirstMove = true; // Reset to reinitialize on next move
+                }
             }
             
             document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -1437,22 +1449,28 @@
                     virtualMouseY = realMouseY;
                 } else {
                     // Mouse wrapping: use virtual mouse position that wraps around screen
+                    // Always use current canvas dimensions (important for fullscreen)
                     const canvasWidth = game.canvas.width;
                     const canvasHeight = game.canvas.height;
                     
+                    // Clamp real mouse position to canvas bounds (important for fullscreen)
+                    const clampedRealX = Math.max(0, Math.min(canvasWidth - 1, realMouseX));
+                    const clampedRealY = Math.max(0, Math.min(canvasHeight - 1, realMouseY));
+                    
                     // Initialize virtual position on first move
                     if (isFirstMove) {
-                        virtualMouseX = realMouseX;
-                        virtualMouseY = realMouseY;
-                        lastMouseX = realMouseX;
-                        lastMouseY = realMouseY;
+                        // Start from center or clamped position
+                        virtualMouseX = clampedRealX;
+                        virtualMouseY = clampedRealY;
+                        lastMouseX = clampedRealX;
+                        lastMouseY = clampedRealY;
                         isFirstMove = false;
                         game.mouse.dx = 0;
                         game.mouse.dy = 0;
                     } else {
-                        // Calculate movement delta
-                        let dx = realMouseX - lastMouseX;
-                        let dy = realMouseY - lastMouseY;
+                        // Calculate movement delta using clamped positions
+                        let dx = clampedRealX - lastMouseX;
+                        let dy = clampedRealY - lastMouseY;
                         
                         // Detect wrapping by checking if movement is too large (likely wrapped)
                         const maxNormalMovement = 50; // Max pixels in one frame for normal movement
@@ -1491,16 +1509,16 @@
                         while (virtualMouseY < 0) virtualMouseY += canvasHeight;
                         while (virtualMouseY >= canvasHeight) virtualMouseY -= canvasHeight;
                         
-                        // Also check if mouse is at edge and trigger wrap
-                        if (realMouseX <= WRAP_THRESHOLD && virtualMouseX > canvasWidth - WRAP_THRESHOLD) {
+                        // Also check if mouse is at edge and trigger wrap (using clamped positions)
+                        if (clampedRealX <= WRAP_THRESHOLD && virtualMouseX > canvasWidth - WRAP_THRESHOLD) {
                             virtualMouseX = WRAP_THRESHOLD;
-                        } else if (realMouseX >= canvasWidth - WRAP_THRESHOLD && virtualMouseX < WRAP_THRESHOLD) {
+                        } else if (clampedRealX >= canvasWidth - WRAP_THRESHOLD && virtualMouseX < WRAP_THRESHOLD) {
                             virtualMouseX = canvasWidth - WRAP_THRESHOLD;
                         }
                         
-                        if (realMouseY <= WRAP_THRESHOLD && virtualMouseY > canvasHeight - WRAP_THRESHOLD) {
+                        if (clampedRealY <= WRAP_THRESHOLD && virtualMouseY > canvasHeight - WRAP_THRESHOLD) {
                             virtualMouseY = WRAP_THRESHOLD;
-                        } else if (realMouseY >= canvasHeight - WRAP_THRESHOLD && virtualMouseY < WRAP_THRESHOLD) {
+                        } else if (clampedRealY >= canvasHeight - WRAP_THRESHOLD && virtualMouseY < WRAP_THRESHOLD) {
                             virtualMouseY = canvasHeight - WRAP_THRESHOLD;
                         }
                         
@@ -1509,9 +1527,9 @@
                         game.mouse.dy = dy;
                     }
                     
-                    // Update last known real mouse position
-                    lastMouseX = realMouseX;
-                    lastMouseY = realMouseY;
+                    // Update last known real mouse position (use clamped values)
+                    lastMouseX = clampedRealX;
+                    lastMouseY = clampedRealY;
                     
                     // Use virtual position for game logic
                     game.mouse.x = virtualMouseX;
@@ -1538,11 +1556,20 @@
                         game.mouse.dx = 0;
                         game.mouse.dy = 0;
                     } else {
-                        // Reset last position when unlocking
-                        lastMouseX = game.mouse.x;
-                        lastMouseY = game.mouse.y;
-                        virtualMouseX = game.mouse.x;
-                        virtualMouseY = game.mouse.y;
+                        // Reset last position when unlocking - use canvas center for fullscreen compatibility
+                        const rect = game.canvas.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            virtualMouseX = game.canvas.width / 2;
+                            virtualMouseY = game.canvas.height / 2;
+                            lastMouseX = rect.left + virtualMouseX;
+                            lastMouseY = rect.top + virtualMouseY;
+                        } else {
+                            lastMouseX = game.mouse.x;
+                            lastMouseY = game.mouse.y;
+                            virtualMouseX = game.mouse.x;
+                            virtualMouseY = game.mouse.y;
+                        }
+                        isFirstMove = true; // Reset to reinitialize on next move
                     }
                 }
             };
@@ -1589,24 +1616,30 @@
 
             game.canvas.addEventListener('mouseleave', (e) => {
                 game.mouse.active = false;
-                // Reset tracking when mouse leaves
+                // Reset tracking when mouse leaves - prepare for re-entry
                 isFirstMove = true;
                 game.mouse.dx = 0;
                 game.mouse.dy = 0;
-                virtualMouseX = game.mouse.x;
-                virtualMouseY = game.mouse.y;
+                // Keep virtual position but will reset on next mouseenter
             });
             
             game.canvas.addEventListener('mouseenter', (e) => {
-                // Reset tracking when mouse enters
+                // Reset tracking when mouse enters - ensure proper initialization for fullscreen
                 const rect = game.canvas.getBoundingClientRect();
                 const realMouseX = e.clientX - rect.left;
                 const realMouseY = e.clientY - rect.top;
+                const canvasWidth = game.canvas.width;
+                const canvasHeight = game.canvas.height;
+                
+                // Clamp to canvas bounds (important for fullscreen)
+                const clampedX = Math.max(0, Math.min(canvasWidth - 1, realMouseX));
+                const clampedY = Math.max(0, Math.min(canvasHeight - 1, realMouseY));
+                
                 isFirstMove = true;
-                lastMouseX = realMouseX;
-                lastMouseY = realMouseY;
-                virtualMouseX = realMouseX;
-                virtualMouseY = realMouseY;
+                lastMouseX = clampedX;
+                lastMouseY = clampedY;
+                virtualMouseX = clampedX;
+                virtualMouseY = clampedY;
             });
 
             // Input handling - Touch (for tablets and phones)
@@ -1678,8 +1711,9 @@
             game.canvas.focus();
             game.canvas.addEventListener('click', () => game.canvas.focus());
 
-            // Start game loop with forced 60 FPS
+            // Start game loop with high FPS (120 FPS target)
             game.lastTime = performance.now();
+            game.fpsTimer = performance.now();
             gameLoop();
         }
 
@@ -2153,11 +2187,14 @@
 
             // Update stats
             game.frame++;
+            // Calculate FPS more accurately
             game.fpsCounter++;
-            if (performance.now() - game.fpsTimer >= 1000) {
-                game.fps = game.fpsCounter;
+            const now = performance.now();
+            const elapsed = now - game.fpsTimer;
+            if (elapsed >= 1000) {
+                game.fps = Math.round((game.fpsCounter * 1000) / elapsed);
                 game.fpsCounter = 0;
-                game.fpsTimer = performance.now();
+                game.fpsTimer = now;
             }
         }
 
@@ -2296,7 +2333,8 @@
                     const golWidth = game.gameOfLife.width;
                     const FLOOR_Z = 0;
                     const CEILING_Z = CEILING_LEVEL;
-                    const SAMPLE_RATE = 2; // Sample every 2 pixels for performance
+                    // Adaptive sample rate based on performance - reduce for higher FPS
+                    const SAMPLE_RATE = game.fps > 100 ? 3 : (game.fps > 60 ? 2 : 1); // Sample every 1-3 pixels based on FPS
                     
                     // Render blood on floor and ceiling
                     for (let x = 0; x < canvas.width; x += SAMPLE_RATE) {
@@ -2374,11 +2412,13 @@
                 }
                 
                 // Raycast for each column
+                // Adaptive quality: skip columns for higher FPS
+                const RAYCAST_SKIP = game.fps < 60 ? 1 : (game.fps < 100 ? 2 : 3); // Skip every 1-3 columns based on FPS
                 let rayResults = [];
                 const wallsWithBlood = new Map(); // Track walls that should have blood pattern (mapX_mapY -> distance)
                 const MAX_BLOOD_WALLS = 10; // Only render blood on 10 closest walls
                 
-                for (let x = 0; x < canvas.width; x++) {
+                for (let x = 0; x < canvas.width; x += RAYCAST_SKIP) {
                     // Calculate ray angle (screen space to world space)
                     const cameraX = 2 * x / canvas.width - 1; // -1 to 1
                     let rayDirX = forwardX + rightX * cameraX * Math.tan(FOV * Math.PI / 360);
@@ -2480,9 +2520,10 @@
                         const wallG = Math.floor(baseG * brightness * (side === 1 ? 0.8 : 1.0));
                         const wallB = Math.floor(baseB * brightness * (side === 1 ? 0.8 : 1.0));
                         
-                        // Draw wall column
+                        // Draw wall column (wider if skipping columns for performance)
                         ctx.fillStyle = `rgb(${wallR}, ${wallG}, ${wallB})`;
-                        ctx.fillRect(x, Math.max(0, drawStart), 1, Math.min(canvas.height, drawEnd) - Math.max(0, drawStart));
+                        const wallWidth = RAYCAST_SKIP;
+                        ctx.fillRect(x, Math.max(0, drawStart), wallWidth, Math.min(canvas.height, drawEnd) - Math.max(0, drawStart));
                         
                         // Store ray result for sprite rendering
                         rayResults.push({
@@ -2545,7 +2586,7 @@
                                                     const bloodBlue = Math.max(0, Math.min(50, (y / golHeight) * 33 + Math.floor(variation / 3)));
                                                     
                                                     ctx.fillStyle = `rgb(${bloodRed}, ${bloodGreen}, ${bloodBlue})`;
-                                                    ctx.fillRect(result.x, screenY, 1, Math.max(1, cellH));
+                                                    ctx.fillRect(result.x, screenY, RAYCAST_SKIP, Math.max(1, cellH));
                                                 }
                                             }
                                         }
@@ -2815,9 +2856,10 @@
         }
 
         function gameLoop() {
-            const targetFPS = 60;
-            const targetFrameTime = 1000 / targetFPS; // 16.67ms per frame
-            const fixedDeltaTime = targetFrameTime / 1000; // 0.01667 seconds (60 FPS)
+            // Higher target FPS for smoother gameplay (120 FPS)
+            const targetFPS = 120;
+            const targetFrameTime = 1000 / targetFPS; // ~8.33ms per frame
+            const fixedDeltaTime = targetFrameTime / 1000; // ~0.00833 seconds (120 FPS)
             
             const currentTime = performance.now();
             
@@ -2830,21 +2872,27 @@
             let elapsed = currentTime - game.lastTime;
             
             // Cap elapsed time to prevent large jumps (handles tab switching, etc.)
-            elapsed = Math.min(elapsed, targetFrameTime * 2); // Max 2 frames worth
+            elapsed = Math.min(elapsed, targetFrameTime * 3); // Max 3 frames worth
             
-            // Only update if enough time has passed (force 60 FPS)
-            if (elapsed >= targetFrameTime) {
-                // Update with fixed timestep (ensures consistent 60 FPS simulation)
+            // Update multiple times if needed to catch up (but cap to prevent spiral of death)
+            let updateCount = 0;
+            const maxUpdatesPerFrame = 3;
+            
+            while (elapsed >= targetFrameTime && updateCount < maxUpdatesPerFrame) {
+                // Update with fixed timestep (ensures consistent 120 FPS simulation)
                 update(fixedDeltaTime);
                 
-                // Render every update
-                render();
-                
-                // Update lastTime, preserving leftover time for smooth frame timing
-                game.lastTime = currentTime - (elapsed % targetFrameTime);
+                elapsed -= targetFrameTime;
+                updateCount++;
             }
+            
+            // Render every frame (even if we didn't update, for smooth visual feedback)
+            render();
+            
+            // Update lastTime, preserving leftover time for smooth frame timing
+            game.lastTime = currentTime - elapsed;
 
-            // Use requestAnimationFrame for smooth rendering (typically 60Hz)
+            // Use requestAnimationFrame for smooth rendering (will run at display refresh rate, up to 120Hz)
             requestAnimationFrame(gameLoop);
         }
 

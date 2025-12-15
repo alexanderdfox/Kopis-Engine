@@ -2371,11 +2371,15 @@ class PygameRenderer:
                 pygame.draw.rect(self.screen, (42, 42, 42), (0, floor_top, self.width, floor_bottom - floor_top))
                 
                 # Render Game of Life blood pattern on floor and ceiling
-                # Use same pattern as walls for consistency, but render every other cell for performance
+                # Adaptive sample rate based on FPS for better performance
                 if self.shared_game_of_life:
                     pattern = self.shared_game_of_life.get_pattern()
                     gol_height = self.shared_game_of_life.height
                     gol_width = self.shared_game_of_life.width
+                    
+                    # Adaptive sample rate based on FPS
+                    ceiling_sample_rate = 2 if fps < 60 else (3 if fps < 100 else 4)
+                    floor_sample_rate = 2 if fps < 60 else (3 if fps < 100 else 4)
                     
                     # Render blood on ceiling (inverted pattern - blood drips down)
                     if ceiling_bottom > ceiling_top:
@@ -2384,9 +2388,9 @@ class PygameRenderer:
                         cell_w = max(1, self.width / gol_width)
                         
                         if cell_h >= 1 and cell_w >= 1:
-                            # Sample every other cell for performance (like walls)
-                            for y in range(0, gol_height, 2):
-                                for x in range(0, gol_width, 2):
+                            # Sample every N cells for performance (adaptive based on FPS)
+                            for y in range(0, gol_height, ceiling_sample_rate):
+                                for x in range(0, gol_width, ceiling_sample_rate):
                                     if pattern[y, x]:
                                         screen_x = int(x * self.width / gol_width)
                                         screen_y = ceiling_top + int((gol_height - 1 - y) * ceiling_height / gol_height)  # Inverted for ceiling
@@ -2397,8 +2401,10 @@ class PygameRenderer:
                                             blood_green = max(0, min(60, int(((gol_height - 1 - y) / gol_height) * 34 + variation // 2)))
                                             blood_blue = max(0, min(50, int(((gol_height - 1 - y) / gol_height) * 33 + variation // 3)))
                                             
+                                            # Draw with sample rate width/height to fill gaps
                                             pygame.draw.rect(self.screen, (blood_red, blood_green, blood_blue),
-                                                           (screen_x, screen_y, max(1, int(cell_w * 2)), max(1, int(cell_h * 2))))
+                                                           (screen_x, screen_y, max(1, int(cell_w * ceiling_sample_rate)), 
+                                                            max(1, int(cell_h * ceiling_sample_rate))))
                     
                     # Render blood on floor
                     if floor_bottom > floor_top:
@@ -2407,9 +2413,9 @@ class PygameRenderer:
                         cell_w = max(1, self.width / gol_width)
                         
                         if cell_h >= 1 and cell_w >= 1:
-                            # Sample every other cell for performance (like walls)
-                            for y in range(0, gol_height, 2):
-                                for x in range(0, gol_width, 2):
+                            # Sample every N cells for performance (adaptive based on FPS)
+                            for y in range(0, gol_height, floor_sample_rate):
+                                for x in range(0, gol_width, floor_sample_rate):
                                     if pattern[y, x]:
                                         screen_x = int(x * self.width / gol_width)
                                         screen_y = floor_top + int(y * floor_height / gol_height)
@@ -2420,14 +2426,18 @@ class PygameRenderer:
                                             blood_green = max(0, min(60, int((y / gol_height) * 34 + variation // 2)))
                                             blood_blue = max(0, min(50, int((y / gol_height) * 33 + variation // 3)))
                                             
+                                            # Draw with sample rate width/height to fill gaps
                                             pygame.draw.rect(self.screen, (blood_red, blood_green, blood_blue),
-                                                           (screen_x, screen_y, max(1, int(cell_w * 2)), max(1, int(cell_h * 2))))
+                                                           (screen_x, screen_y, max(1, int(cell_w * floor_sample_rate)), 
+                                                            max(1, int(cell_h * floor_sample_rate))))
                 
                 # Raycast for each column
+                # Adaptive quality: skip columns for higher FPS
+                raycast_skip = 1 if fps < 60 else (2 if fps < 100 else 3)  # Skip 1-3 columns based on FPS
                 cell_size = self.maze.cell_size
                 ray_results = []
                 
-                for x in range(self.width):
+                for x in range(0, self.width, raycast_skip):
                     # Calculate ray angle (screen space to world space)
                     camera_x = 2.0 * x / self.width - 1.0  # -1 to 1
                     ray_dir_x = forward_x + right_x * camera_x * math.tan(math.radians(FOV / 2.0))
@@ -2464,10 +2474,11 @@ class PygameRenderer:
                         wall_g = int(base_g * brightness * (0.8 if side == 1 else 1.0))
                         wall_b = int(base_b * brightness * (0.8 if side == 1 else 1.0))
                         
-                        # Draw wall column
-                        pygame.draw.line(self.screen, (wall_r, wall_g, wall_b), 
-                                       (x, max(0, int(draw_start))), 
-                                       (x, min(self.height, int(draw_end))))
+                        # Draw wall column (wider if skipping columns for performance)
+                        wall_width = raycast_skip
+                        pygame.draw.rect(self.screen, (wall_r, wall_g, wall_b),
+                                       (x, max(0, int(draw_start)), wall_width, 
+                                        min(self.height, int(draw_end)) - max(0, int(draw_start))))
                         
                         # Store ray result for sprite rendering
                         ray_results.append({
@@ -2478,7 +2489,9 @@ class PygameRenderer:
                         })
                         
                         # Render Game of Life blood pattern on close walls
-                        if distance < 200 and x % 2 == 0:  # Every other column for performance
+                        # Adaptive sampling based on FPS
+                        blood_sample_rate = 2 if fps < 60 else (3 if fps < 100 else 4)
+                        if distance < 200 and x % blood_sample_rate == 0:
                             if self.shared_game_of_life:
                                 pattern = self.shared_game_of_life.get_pattern()
                                 gol_height = self.shared_game_of_life.height
@@ -2498,8 +2511,9 @@ class PygameRenderer:
                                                 blood_green = max(0, min(60, int((y / gol_height) * 34 + variation // 2)))
                                                 blood_blue = max(0, min(50, int((y / gol_height) * 33 + variation // 3)))
                                                 
-                                                pygame.draw.line(self.screen, (blood_red, blood_green, blood_blue),
-                                                               (x, int(screen_y)), (x, int(screen_y + cell_h)))
+                                                # Draw blood pixel with width matching raycast skip
+                                                pygame.draw.rect(self.screen, (blood_red, blood_green, blood_blue),
+                                                               (x, int(screen_y), raycast_skip, max(1, int(cell_h))))
                     else:
                         ray_results.append({'x': x, 'distance': MAX_DEPTH, 'wall_start': 0, 'wall_end': 0})
                 
@@ -2699,7 +2713,9 @@ class PygameRenderer:
         
         # Update display
         pygame.display.flip()
-        self.clock.tick(60)
+        # Higher target FPS (120 FPS) - tick() without argument allows unlimited FPS
+        # Use tick_busy_loop for more accurate timing on high refresh rate displays
+        self.clock.tick_busy_loop(120)
     
     def _draw_ui(self, camera_pos, frame_count: int, fps: float, entity_count: int, 
                  camera_yaw: float = 0.0, camera_pitch: float = 0.0, camera_roll: float = 0.0, fpv_mode: bool = False):
@@ -3247,11 +3263,13 @@ def main():
             frame += 1
             fps_counter += 1
             
-            # Calculate FPS
-            if time.time() - fps_timer >= 1.0:
-                current_fps = fps_counter
+            # Calculate FPS more accurately
+            now = time.time()
+            elapsed = now - fps_timer
+            if elapsed >= 1.0:
+                current_fps = round((fps_counter * 1.0) / elapsed)
                 fps_counter = 0
-                fps_timer = time.time()
+                fps_timer = now
             
             # Get camera position and rotation from engine (smoothly follows player) - 6DOF
             camera_pos = engine.camera_pos
@@ -3263,8 +3281,8 @@ def main():
             # Render with pygame (FPV mode with 6DOF)
             renderer.render(engine.entities, camera_pos, frame, current_fps, camera_yaw, camera_pitch, camera_roll, fpv_mode)
             
-            # Small delay to prevent excessive CPU usage
-            time.sleep(0.001)
+            # No sleep needed - clock.tick_busy_loop handles timing
+            # This allows higher FPS while maintaining smooth frame pacing
     
     except KeyboardInterrupt:
         print("\n\nGame interrupted")
