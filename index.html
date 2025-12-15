@@ -408,6 +408,7 @@
             particles: [],
             gameOfLife: null, // Shared Game of Life instance
             gameOfLifeUpdateCounter: 0,
+            gameOfLifeResetCounter: 0, // Counter for resetting Game of Life every 30 frames
             rayResults: [] // Store raycast results for sprite rendering
         };
 
@@ -2137,6 +2138,15 @@
                 if (game.gameOfLife) {
                     game.gameOfLife.update();
                 }
+            }
+            
+            // Reset Game of Life with new random pattern every 30 frames
+            game.gameOfLifeResetCounter++;
+            if (game.gameOfLifeResetCounter >= 30) {
+                game.gameOfLifeResetCounter = 0;
+                // Generate new random seed for fresh pattern
+                const newSeed = Math.floor(Math.random() * 1000000);
+                game.gameOfLife = new GameOfLife(newSeed);
             }
 
             // Update motion trails (with memory limits)
