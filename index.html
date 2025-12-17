@@ -1643,9 +1643,75 @@
                 virtualMouseY = clampedY;
             });
 
+            // Gyroscope-based look controls (primarily for iOS/mobile)
+            // We feed gyroscope deltas into the existing mouse dx/dy pipeline so FPV code stays unchanged.
+            game.gyro = {
+                enabled: false,
+                lastBeta: null,
+                lastGamma: null
+            };
+            let gyroInitialized = false;
+
+            function initGyroIfNeeded() {
+                if (gyroInitialized) return;
+                gyroInitialized = true;
+
+                if (typeof DeviceOrientationEvent === 'undefined') {
+                    return;
+                }
+
+                const attachListener = () => {
+                    window.addEventListener('deviceorientation', (event) => {
+                        if (!game.fpvMode) return;
+                        if (event.beta == null || event.gamma == null) return;
+
+                        const beta = event.beta;
+                        const gamma = event.gamma;
+
+                        if (game.gyro.lastBeta === null || game.gyro.lastGamma === null) {
+                            game.gyro.lastBeta = beta;
+                            game.gyro.lastGamma = gamma;
+                            return;
+                        }
+
+                        // Convert orientation deltas into "mouse-like" dx/dy.
+                        const gyroYawSensitivity = 0.5;   // tilt left/right → yaw
+                        const gyroPitchSensitivity = 0.5; // tilt forward/back → pitch
+
+                        const dBeta = beta - game.gyro.lastBeta;
+                        const dGamma = gamma - game.gyro.lastGamma;
+
+                        game.gyro.lastBeta = beta;
+                        game.gyro.lastGamma = gamma;
+                        game.gyro.enabled = true;
+
+                        // Map gamma (side tilt) to horizontal mouse, beta (front/back) to vertical
+                        game.mouse.dx += dGamma * gyroYawSensitivity;
+                        game.mouse.dy += dBeta * gyroPitchSensitivity;
+                    });
+                };
+
+                // iOS 13+ requires explicit permission
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission()
+                        .then((response) => {
+                            if (response === 'granted') {
+                                attachListener();
+                            }
+                        })
+                        .catch(() => {
+                            // Ignore errors; fall back to traditional controls
+                        });
+                } else {
+                    attachListener();
+                }
+            }
+
             // Input handling - Touch (for tablets and phones)
             game.canvas.addEventListener('touchstart', (e) => {
                 e.preventDefault(); // Prevent scrolling and other default behaviors
+                // First user interaction on mobile: attempt to enable gyroscope controls
+                initGyroIfNeeded();
                 if (e.touches.length > 0) {
                     const touch = e.touches[0];
                     const rect = game.canvas.getBoundingClientRect();
@@ -1657,6 +1723,28 @@
                     game.touch.worldX = game.camera.x + (game.touch.x - game.canvas.width / 2);
                     game.touch.worldY = game.camera.y + (game.touch.y - game.canvas.height / 2);
                     game.touch.active = true;
+
+                    // Simple virtual WASD on left side of the screen
+                    const canvasWidth = game.canvas.width;
+                    const canvasHeight = game.canvas.height;
+                    const isLeftSide = game.touch.x < canvasWidth * 0.5;
+                    if (isLeftSide) {
+                        const centerX = canvasWidth * 0.25;
+                        const centerY = canvasHeight * 0.5;
+                        const dx = game.touch.x - centerX;
+                        const dy = game.touch.y - centerY;
+                        const DEAD_ZONE = 20;
+
+                        // Forward/back based on vertical offset (screen y grows downward)
+                        const forward = -dy;
+                        const right = dx;
+
+                        game.keys['w'] = forward > DEAD_ZONE;
+                        game.keys['s'] = forward < -DEAD_ZONE;
+                        game.keys['d'] = right > DEAD_ZONE;
+                        game.keys['a'] = right < -DEAD_ZONE;
+                        updateKeyDisplay();
+                    }
                 }
             }, { passive: false });
 
@@ -1674,6 +1762,27 @@
                             // Convert screen coordinates to world coordinates
                             game.touch.worldX = game.camera.x + (game.touch.x - game.canvas.width / 2);
                             game.touch.worldY = game.camera.y + (game.touch.y - game.canvas.height / 2);
+
+                            // Update virtual WASD on left side while moving
+                            const canvasWidth = game.canvas.width;
+                            const canvasHeight = game.canvas.height;
+                            const isLeftSide = game.touch.x < canvasWidth * 0.5;
+                            if (isLeftSide) {
+                                const centerX = canvasWidth * 0.25;
+                                const centerY = canvasHeight * 0.5;
+                                const dx = game.touch.x - centerX;
+                                const dy = game.touch.y - centerY;
+                                const DEAD_ZONE = 20;
+
+                                const forward = -dy;
+                                const right = dx;
+
+                                game.keys['w'] = forward > DEAD_ZONE;
+                                game.keys['s'] = forward < -DEAD_ZONE;
+                                game.keys['d'] = right > DEAD_ZONE;
+                                game.keys['a'] = right < -DEAD_ZONE;
+                                updateKeyDisplay();
+                            }
                             break;
                         }
                     }
@@ -1694,6 +1803,13 @@
                     if (!touchStillActive) {
                         game.touch.active = false;
                         game.touch.touchId = null;
+
+                        // Reset virtual WASD keys when touch ends
+                        game.keys['w'] = false;
+                        game.keys['a'] = false;
+                        game.keys['s'] = false;
+                        game.keys['d'] = false;
+                        updateKeyDisplay();
                     }
                 }
             }, { passive: false });
@@ -1702,6 +1818,12 @@
                 e.preventDefault();
                 game.touch.active = false;
                 game.touch.touchId = null;
+                // Also clear movement keys on cancel
+                game.keys['w'] = false;
+                game.keys['a'] = false;
+                game.keys['s'] = false;
+                game.keys['d'] = false;
+                updateKeyDisplay();
             }, { passive: false });
 
             // Hide loading
