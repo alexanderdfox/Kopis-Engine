@@ -1,4 +1,4 @@
-.PHONY: build run clean test help swift-build swift-run python-run
+.PHONY: build run clean test help swift-build swift-run python-run xcodeproj-python xcode-python xcode-open-python
 
 # Default target
 .DEFAULT_GOAL := help
@@ -26,6 +26,9 @@ help: ## Show this help message
 	@echo "  make swift-build  - Build Swift package only"
 	@echo "  make release      - Build release version"
 	@echo "  make dev          - Run in development mode"
+	@echo "  make xcodeproj-python - Generate Python .xcodeproj file (requires xcodegen)"
+	@echo "  make xcode-python - Open Python project in Xcode"
+	@echo "  make xcode-open-python - Generate and open Python .xcodeproj file"
 	@echo "  make help         - Show this help message"
 
 build: swift-build ## Build the Swift project
@@ -116,3 +119,26 @@ install: release ## Install to /usr/local/bin (requires sudo)
 	@echo "Installing Kopis Engine..."
 	sudo cp $(SWIFT_DIR)/.build/release/KopisEngineApp /usr/local/bin/kopis-engine
 	@echo "✓ Installed to /usr/local/bin/kopis-engine"
+
+# Python Xcode project targets
+xcodeproj-python: ## Generate Python .xcodeproj file (requires xcodegen: brew install xcodegen)
+	@./KopisEnginePython/generate-xcodeproj.sh
+
+xcode-python: ## Open Python project in Xcode
+	@echo "Opening Kopis Engine (Python) in Xcode..."
+	@echo ""
+	@if [ -d "KopisEnginePython/KopisEnginePython.xcodeproj" ]; then \
+		echo "Opening KopisEnginePython.xcodeproj..."; \
+		open KopisEnginePython/KopisEnginePython.xcodeproj; \
+	else \
+		echo "⚠ .xcodeproj not found. Generating first..."; \
+		$(MAKE) xcodeproj-python; \
+		if [ -d "KopisEnginePython/KopisEnginePython.xcodeproj" ]; then \
+			open KopisEnginePython/KopisEnginePython.xcodeproj; \
+		else \
+			echo "⚠ Failed to generate .xcodeproj"; \
+			exit 1; \
+		fi \
+	fi
+
+xcode-open-python: xcode-python ## Generate and open Python .xcodeproj file

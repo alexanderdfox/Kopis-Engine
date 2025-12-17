@@ -1,0 +1,1695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kopis Engine - Python Web Edition (Pyodide)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 20px;
+            border-bottom: 2px solid #0f3460;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            background: linear-gradient(90deg, #00d4ff, #5b9bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .loading {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .loading-spinner {
+            border: 4px solid rgba(0, 212, 255, 0.3);
+            border-top: 4px solid #00d4ff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 18px;
+            color: #00d4ff;
+        }
+
+        .loading-progress {
+            width: 300px;
+            height: 4px;
+            background: rgba(0, 212, 255, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .loading-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #5b9bd5);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .game-container {
+            flex: 1;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .game-container.active {
+            display: flex;
+        }
+
+        #gameCanvas {
+            background: #0a0a0a;
+            border: 2px solid #0f3460;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+            border-radius: 5px;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+            touch-action: none;
+            user-select: none;
+        }
+
+        #gameCanvas:focus {
+            outline: none;
+            box-shadow: 0 0 40px rgba(0, 212, 255, 0.5);
+        }
+
+        .stats {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border-radius: 5px;
+            border: 1px solid #0f3460;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 25px;
+            border-radius: 10px;
+            border: 1px solid #0f3460;
+            backdrop-filter: blur(10px);
+        }
+
+        .controls h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #00d4ff;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .error {
+            display: none;
+            flex: 1;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 20px;
+            padding: 40px;
+        }
+
+        .error.active {
+            display: flex;
+        }
+
+        .error-message {
+            background: rgba(255, 0, 0, 0.2);
+            border: 2px solid #ff0000;
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 600px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+
+        /* Epilepsy Warning Modal */
+        .epilepsy-warning {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            backdrop-filter: blur(10px);
+        }
+
+        .epilepsy-warning.hidden {
+            display: none;
+        }
+
+        .epilepsy-warning-content {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 3px solid #ff4444;
+            border-radius: 15px;
+            padding: 40px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 0 50px rgba(255, 68, 68, 0.5);
+        }
+
+        .epilepsy-warning-content h2 {
+            color: #ff4444;
+            font-size: 32px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .epilepsy-warning-content p {
+            color: #fff;
+            font-size: 18px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .epilepsy-warning-content .warning-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .epilepsy-warning-button {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: #fff;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .epilepsy-warning-button:hover {
+            background: linear-gradient(135deg, #ff6666, #ff0000);
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(255, 68, 68, 0.7);
+        }
+
+        .epilepsy-warning-button:active {
+            transform: scale(0.98);
+        }
+    </style>
+    <!-- Pyodide -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+</head>
+<body>
+    <!-- Epilepsy Warning Modal -->
+    <div class="epilepsy-warning" id="epilepsyWarning">
+        <div class="epilepsy-warning-content">
+            <div class="warning-icon">⚠️</div>
+            <h2>Epilepsy Warning</h2>
+            <p>
+                This application contains flashing lights, rapid visual changes, and intense visual effects
+                that may trigger seizures in people with photosensitive epilepsy or other photosensitive conditions.
+            </p>
+            <p>
+                If you have a history of epilepsy or are sensitive to flashing lights, please use caution
+                or avoid using this application.
+            </p>
+            <button class="epilepsy-warning-button" id="acknowledgeWarning">
+                I Understand - Continue
+            </button>
+        </div>
+    </div>
+
+    <div class="header">
+        <div class="title">Kopis Engine - Python Web Edition</div>
+        <div>Powered by Pyodide</div>
+    </div>
+
+    <div class="loading" id="loading">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading Python runtime (Pyodide)...</div>
+        <div class="loading-progress">
+            <div class="loading-progress-bar" id="progressBar"></div>
+        </div>
+        <div style="font-size: 12px; color: #888;" id="loadingStatus">Initializing...</div>
+    </div>
+
+    <div class="game-container" id="gameContainer">
+        <canvas id="gameCanvas" width="1280" height="720" tabindex="0"></canvas>
+        <div class="stats" id="stats">
+            <div>FPS: <span id="fps">0</span></div>
+            <div>Frame: <span id="frame">0</span></div>
+            <div>Python: <span id="pythonStatus">Ready</span></div>
+        </div>
+        <div class="controls">
+            <h3>Controls</h3>
+            <div class="controls-grid">
+                <div>WASD - Move</div>
+                <div>Space - Jump</div>
+                <div>Mouse - Look</div>
+                <div>ESC - Release Mouse</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="error" id="error">
+        <h2 style="color: #ff0000;">Error Loading Python Engine</h2>
+        <div class="error-message" id="errorMessage"></div>
+    </div>
+
+    <script>
+        let pyodide = null;
+        let gameRunning = false;
+        let canvas = null;
+        let ctx = null;
+        let lastFrameTime = 0;
+        let frameCount = 0;
+        let fps = 0;
+        let fpsLastTime = Date.now();
+
+        // Initialize Pyodide
+        async function initPyodide() {
+            try {
+                updateLoadingStatus('Loading Pyodide runtime...');
+                updateProgress(10);
+
+                pyodide = await loadPyodide({
+                    indexURL: "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/"
+                });
+
+                updateProgress(30);
+                updateLoadingStatus('Setting up Python environment...');
+
+                // Install micropip for package management
+                await pyodide.loadPackage("micropip");
+                const micropip = pyodide.pyimport("micropip");
+                
+                updateProgress(50);
+                updateLoadingStatus('Loading kopis_engine.py...');
+
+                // Load the Python game engine code from kopis_engine.py
+                let pythonCode;
+                try {
+                    pythonCode = await fetchPythonCode();
+                } catch (error) {
+                    console.warn('Could not load kopis_engine.py, using fallback:', error);
+                    updateLoadingStatus('Using fallback engine (kopis_engine.py not found)');
+                    pythonCode = getFallbackPythonCode();
+                }
+                console.log('Running Python code...');
+                try {
+                    // Run Python code and capture any errors
+                    await pyodide.runPythonAsync(pythonCode);
+                    console.log('Python code executed successfully');
+                    // Test that classes are available (don't fail if some are missing)
+                    try {
+                        pyodide.runPython(`
+                            # Test that all required classes are available
+                            test_entity = GameEntity(id='test')
+                            print("✓ GameEntity class works")
+                            
+                            # Check if Maze exists (from kopis_engine.py)
+                            if 'Maze' in globals():
+                                test_maze = Maze()
+                                print("✓ Maze class works")
+                            else:
+                                print("⚠ Maze class not found - will use fallback")
+                            
+                            # Check if KopisEngine exists
+                            if 'KopisEngine' in globals():
+                                test_engine = KopisEngine(use_transformers=False)
+                                print("✓ KopisEngine class works")
+                            else:
+                                print("⚠ KopisEngine class not found - will use fallback")
+                            
+                            # BrowserRenderer should always exist (we create it)
+                            test_renderer = BrowserRenderer(width=100, height=100)
+                            print("✓ BrowserRenderer class works")
+                        `);
+                    } catch (testError) {
+                        console.warn('Class test had issues (this is OK if using fallback):', testError);
+                        // Continue anyway - we'll check in initialization
+                    }
+                } catch (pyError) {
+                    console.error('Python code execution error:', pyError);
+                    let pythonError = '';
+                    try {
+                        if (pyodide.lastException) {
+                            pythonError = pyodide.lastException.toString();
+                            console.error('Python exception details:', pythonError);
+                        }
+                    } catch (e) {
+                        // Ignore
+                    }
+                    throw new Error('Failed to execute Python code: ' + pyError.toString() + (pythonError ? '\n' + pythonError : ''));
+                }
+
+                updateProgress(80);
+                updateLoadingStatus('Initializing game engine...');
+
+                // Set up canvas bridge
+                setupCanvasBridge();
+
+                // Initialize the game - check if kopis_engine.py loaded successfully
+                console.log('Initializing game engine...');
+                try {
+                    // Check if we have the full engine or need to use fallback
+                    let hasFullEngine = false;
+                    try {
+                        hasFullEngine = pyodide.runPython(`
+                            'Maze' in globals() and 'KopisEngine' in globals()
+                        `);
+                    } catch (e) {
+                        console.warn('Could not check for full engine, using fallback');
+                        hasFullEngine = false;
+                    }
+                    
+                    if (hasFullEngine) {
+                        console.log('✓ Full kopis_engine.py loaded - using complete engine');
+                        console.log('Using full kopis_engine.py');
+                        pyodide.runPython(`
+import js
+import math
+import random
+
+# Create maze
+maze = Maze(chunk_size=20, cell_size=30.0, load_radius=3)
+
+# Create renderer (uses JavaScript Canvas API)
+renderer = BrowserRenderer(width=1280, height=720, maze=maze)
+
+# Create engine with maze
+engine = KopisEngine(use_transformers=False, maze=maze, sound_manager=None)
+
+# Find valid starting position
+start_world = None
+for _ in range(100):
+    random_x = (random.random() - 0.5) * 1000
+    random_y = (random.random() - 0.5) * 1000
+    if not maze.check_collision((random_x, random_y), 12.0 + 10):
+        start_world = (random_x, random_y)
+        break
+
+if start_world is None:
+    start_world = (0.0, 0.0)
+
+# Create player
+player = GameEntity(
+    id='player',
+    position=(start_world[0], start_world[1], 0.0),
+    velocity=(0.0, 0.0, 0.0),
+    health=100.0,
+    description="Player character",
+    properties={
+        'affected_by_gravity': True,
+        'radius': 12.0,
+        'on_ground': True
+    }
+)
+engine.add_entity(player)
+
+# Add some NPCs
+for i in range(5):
+    angle = (i / 5.0) * 2 * math.pi
+    dist = 200.0
+    npc = GameEntity(
+        id='npc_' + str(i),
+        position=(start_world[0] + math.cos(angle) * dist, start_world[1] + math.sin(angle) * dist, 0.0),
+        velocity=(0.0, 0.0, 0.0),
+        health=50.0,
+        properties={'radius': 8.0}
+    )
+    engine.add_entity(npc)
+
+# Store in global scope
+js.gameState = {
+    'engine': engine,
+    'renderer': renderer,
+    'maze': maze,
+    'player': player
+}
+                        `);
+                    } else {
+                        console.log('⚠ Using fallback simplified engine (kopis_engine.py not available)');
+                        updateLoadingStatus('Using simplified engine');
+                        // Use simplified engine from fallback
+                        pyodide.runPython(`
+import js
+import math
+import random
+
+# Create simplified maze
+maze = SimpleMaze(chunk_size=20, cell_size=30.0, load_radius=3)
+
+# Create simplified engine first
+engine = SimpleEngine()
+
+# Create renderer (uses JavaScript Canvas API) with maze
+renderer = BrowserRenderer(width=1280, height=720, maze=maze)
+
+# Create player
+player = GameEntity(
+    id='player',
+    position=(0.0, 0.0, 0.0),
+    velocity=(0.0, 0.0, 0.0),
+    health=100.0,
+    description="Player character"
+)
+engine.add_entity(player)
+
+# Add some NPCs
+for i in range(5):
+    angle = (i / 5.0) * 2 * math.pi
+    dist = 200.0
+    npc = GameEntity(
+        id='npc_' + str(i),
+        position=(math.cos(angle) * dist, math.sin(angle) * dist, 0.0),
+        velocity=(0.0, 0.0, 0.0),
+        health=50.0
+    )
+    engine.add_entity(npc)
+
+# Store in global scope
+js.gameState = {
+    'engine': engine,
+    'renderer': renderer,
+    'maze': maze,
+    'player': player
+}
+                        `);
+                    }
+                    console.log('Game engine initialized successfully');
+                } catch (pyError) {
+                    console.error('Game initialization error:', pyError);
+                    if (pyodide.lastException) {
+                        console.error('Python exception:', pyodide.lastException);
+                    }
+                    throw new Error('Failed to initialize game: ' + pyError.toString());
+                }
+
+                updateProgress(100);
+                updateLoadingStatus('Starting game...');
+                
+                // Get canvas and context
+                canvas = document.getElementById('gameCanvas');
+                ctx = canvas.getContext('2d');
+                canvas.focus();
+
+                // Set up input handlers
+                setupInputHandlers();
+
+                // Hide loading, show game
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('gameContainer').classList.add('active');
+                
+                // Start game loop
+                gameRunning = true;
+                gameLoop();
+                
+            } catch (error) {
+                console.error('Error initializing Pyodide:', error);
+                console.error('Error stack:', error.stack);
+                let errorMsg = error.toString();
+                if (error.stack) {
+                    errorMsg += '\n\nStack trace:\n' + error.stack;
+                }
+                if (pyodide && pyodide.lastException) {
+                    try {
+                        const pyError = pyodide.lastException;
+                        errorMsg += '\n\nPython error: ' + pyError.toString();
+                    } catch (e) {
+                        // Ignore
+                    }
+                }
+                showError(errorMsg);
+            }
+        }
+
+        // Fetch Python code from kopis_engine.py and adapt for browser
+        async function fetchPythonCode() {
+            try {
+                // Load the actual kopis_engine.py file
+                const response = await fetch('kopis_engine.py');
+                if (!response.ok) {
+                    throw new Error(`Failed to load kopis_engine.py: ${response.status}`);
+                }
+                let pythonCode = await response.text();
+                
+                // Replace pygame imports and usage with browser-compatible code
+                pythonCode = pythonCode.replace(/import pygame/g, '# import pygame  # Not available in browser');
+                pythonCode = pythonCode.replace(/from pygame/g, '# from pygame  # Not available in browser');
+                pythonCode = pythonCode.replace(/PYGAME_AVAILABLE = True/g, 'PYGAME_AVAILABLE = False');
+                
+                // Make torch/transformers optional (they already have try/except, but ensure they fail gracefully)
+                pythonCode = pythonCode.replace(/^import torch$/m, 'try:\n    import torch\nexcept:\n    torch = None');
+                
+                // Replace PygameRenderer class with BrowserRenderer
+                // Find the PygameRenderer class and replace it
+                const pygameRendererStart = pythonCode.indexOf('class PygameRenderer:');
+                if (pygameRendererStart !== -1) {
+                    // Find where PygameRenderer ends (next class definition or end of file)
+                    const nextClassMatch = pythonCode.substring(pygameRendererStart).match(/\nclass \w+:/);
+                    const pygameRendererEnd = nextClassMatch 
+                        ? pygameRendererStart + nextClassMatch.index 
+                        : pythonCode.length;
+                    
+                    // Replace PygameRenderer with BrowserRenderer
+                    const before = pythonCode.substring(0, pygameRendererStart);
+                    const after = pythonCode.substring(pygameRendererEnd);
+                    
+                    // Add BrowserRenderer implementation
+                    const browserRenderer = `
+# Browser renderer using JavaScript Canvas API (replaces PygameRenderer)
+class BrowserRenderer:
+    """Browser-based renderer using JavaScript Canvas API"""
+    
+    def __init__(self, width=1280, height=720, maze=None):
+        self.width = width
+        self.height = height
+        self.maze = maze
+        self.mouse_captured = False
+        
+        # Access JavaScript canvas
+        js = __import__('js')
+        self.canvas = js.document.getElementById('gameCanvas')
+        self.ctx = self.canvas.getContext('2d')
+        
+        # Game of Life for blood patterns
+        self.shared_game_of_life = GameOfLife(seed=42)
+        self.game_of_life_update_counter = 0
+        self.game_of_life_reset_counter = 0
+        
+        # Colors
+        self.BLACK = (0, 0, 0)
+        self.WHITE = (255, 255, 255)
+        self.BLUE = (0, 100, 255)
+        self.RED = (255, 0, 0)
+        self.GREEN = (0, 255, 0)
+        self.YELLOW = (255, 255, 0)
+        self.GRAY = (128, 128, 128)
+        self.WALL_COLOR = (60, 60, 80)
+        self.PATH_COLOR = (20, 20, 30)
+    
+    def clear(self, color=(0, 0, 0)):
+        """Clear canvas with color"""
+        self.ctx.fillStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+        self.ctx.fillRect(0, 0, self.width, self.height)
+    
+    def draw_rect(self, x, y, w, h, color):
+        """Draw rectangle"""
+        self.ctx.fillStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+        self.ctx.fillRect(int(x), int(y), int(w), int(h))
+    
+    def draw_line(self, x1, y1, x2, y2, color):
+        """Draw line"""
+        self.ctx.strokeStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+        self.ctx.beginPath()
+        self.ctx.moveTo(int(x1), int(y1))
+        self.ctx.lineTo(int(x2), int(y2))
+        self.ctx.stroke()
+    
+    def render(self, entities, camera_pos, frame_count, fps, 
+               camera_yaw=0.0, camera_pitch=0.0, camera_roll=0.0, fpv_mode=False):
+        """Render using Canvas API - simplified version of PygameRenderer.render"""
+        import math
+        
+        # Clear screen
+        self.clear(self.BLACK)
+        
+        # Extract camera position
+        if len(camera_pos) == 3:
+            cam_x, cam_y, cam_z = camera_pos
+        else:
+            cam_x, cam_y = camera_pos
+            cam_z = 0.0
+        
+        if self.maze and fpv_mode:
+            # Doom-style raycasting (simplified for browser)
+            FOV = 60.0
+            MAX_DEPTH = 1000.0
+            
+            yaw_rad = math.radians(camera_yaw)
+            pitch_rad = math.radians(camera_pitch)
+            forward_x = math.sin(yaw_rad)
+            forward_y = -math.cos(yaw_rad)
+            right_x = math.cos(yaw_rad)
+            right_y = math.sin(yaw_rad)
+            
+            # Draw floor and ceiling
+            half_height = self.height / 2
+            horizon_y = half_height - math.tan(pitch_rad) * (self.height / 2)
+            
+            # Ceiling
+            ceiling_bottom = max(0, int(horizon_y))
+            self.draw_rect(0, 0, self.width, ceiling_bottom, (26, 26, 26))
+            
+            # Floor
+            floor_top = min(self.height, int(horizon_y))
+            self.draw_rect(0, floor_top, self.width, self.height - floor_top, (42, 42, 42))
+            
+            # Raycast walls (simplified - every 2nd column for performance)
+            for x in range(0, self.width, 2):
+                camera_x = 2.0 * x / self.width - 1.0
+                ray_dir_x = forward_x + right_x * camera_x * math.tan(math.radians(FOV / 2.0))
+                ray_dir_y = forward_y + right_y * camera_x * math.tan(math.radians(FOV / 2.0))
+                
+                # Simple raycast (simplified DDA)
+                result = self._raycast_wall(cam_x, cam_y, ray_dir_x, ray_dir_y, MAX_DEPTH)
+                if result:
+                    perp_wall_dist, side = result
+                    distance = perp_wall_dist * self.maze.cell_size
+                    line_height = abs(self.height / perp_wall_dist) if perp_wall_dist > 0 else self.height
+                    draw_start = -line_height / 2 + self.height / 2 + math.tan(pitch_rad) * (self.height / 2)
+                    draw_end = line_height / 2 + self.height / 2 + math.tan(pitch_rad) * (self.height / 2)
+                    
+                    brightness = max(0.3, min(1.0, 1.0 - distance / 500.0))
+                    wall_r = int(60 * brightness * (0.8 if side == 1 else 1.0))
+                    wall_g = int(60 * brightness * (0.8 if side == 1 else 1.0))
+                    wall_b = int(80 * brightness * (0.8 if side == 1 else 1.0))
+                    
+                    self.draw_line(x, max(0, int(draw_start)), x, min(self.height, int(draw_end)), (wall_r, wall_g, wall_b))
+        
+        # Draw entities as sprites (simplified)
+        sorted_entities = sorted(entities, key=lambda e: e.position[2] if len(e.position) == 3 else 0.0, reverse=True)
+        for entity in sorted_entities:
+            if len(entity.position) >= 2:
+                ex, ey = entity.position[0], entity.position[1]
+                dx = ex - cam_x
+                dy = ey - cam_y
+                
+                # Simple 2D projection
+                screen_x = self.width / 2 + (dx * 2)
+                screen_y = self.height / 2 + (dy * 2)
+                
+                if 0 <= screen_x < self.width and 0 <= screen_y < self.height:
+                    if entity.id == 'player':
+                        color = self.BLUE
+                        size = 10
+                    else:
+                        color = self.RED
+                        size = 8
+                    
+                    self.ctx.fillStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+                    self.ctx.beginPath()
+                    self.ctx.arc(int(screen_x), int(screen_y), size, 0, 2 * math.pi)
+                    self.ctx.fill()
+    
+    def _raycast_wall(self, cam_x, cam_y, ray_dir_x, ray_dir_y, max_depth):
+        """DDA raycast algorithm (Doom-style) - proper 3D raycasting"""
+        if not self.maze:
+            return None
+        
+        cell_size = self.maze.cell_size
+        
+        # Normalize ray direction
+        ray_length = math.sqrt(ray_dir_x**2 + ray_dir_y**2)
+        if ray_length > 0:
+            ray_dir_x /= ray_length
+            ray_dir_y /= ray_length
+        
+        # Avoid division by zero
+        if abs(ray_dir_x) < 0.0001:
+            ray_dir_x = -0.0001 if ray_dir_x < 0 else 0.0001
+        if abs(ray_dir_y) < 0.0001:
+            ray_dir_y = -0.0001 if ray_dir_y < 0 else 0.0001
+        
+        # Current map position (in cells)
+        map_x = int(cam_x / cell_size)
+        map_y = int(cam_y / cell_size)
+        
+        # Calculate step direction and initial side distances
+        delta_dist_x = abs(1.0 / ray_dir_x)
+        delta_dist_y = abs(1.0 / ray_dir_y)
+        
+        step_x = 1 if ray_dir_x > 0 else -1
+        step_y = 1 if ray_dir_y > 0 else -1
+        
+        # Calculate initial side distances
+        if ray_dir_x < 0:
+            side_dist_x = (cam_x / cell_size - map_x) * delta_dist_x
+        else:
+            side_dist_x = (map_x + 1.0 - cam_x / cell_size) * delta_dist_x
+        
+        if ray_dir_y < 0:
+            side_dist_y = (cam_y / cell_size - map_y) * delta_dist_y
+        else:
+            side_dist_y = (map_y + 1.0 - cam_y / cell_size) * delta_dist_y
+        
+        # Perform DDA
+        hit = False
+        side = 0
+        max_steps = int(max_depth / cell_size) + 1
+        
+        for _ in range(max_steps):
+            if side_dist_x < side_dist_y:
+                side_dist_x += delta_dist_x
+                map_x += step_x
+                side = 0
+            else:
+                side_dist_y += delta_dist_y
+                map_y += step_y
+                side = 1
+            
+            # Check collision at map position
+            world_x = map_x * cell_size
+            world_y = map_y * cell_size
+            
+            # Use maze's check_collision with small radius to detect walls
+            if self.maze.check_collision((world_x, world_y), cell_size * 0.1):
+                hit = True
+                break
+        
+        if hit:
+            # Calculate perpendicular distance to wall
+            if side == 0:
+                perp_wall_dist = (map_x - cam_x / cell_size + (1 - step_x) / 2.0) / ray_dir_x
+            else:
+                perp_wall_dist = (map_y - cam_y / cell_size + (1 - step_y) / 2.0) / ray_dir_y
+            
+            return (abs(perp_wall_dist), side)
+        
+        return None
+    
+    def get_input(self, fpv_mode=False):
+        """Stub for get_input - input is handled by JavaScript"""
+        # Input is handled by JavaScript and passed to process_frame
+        # This method exists for compatibility with code that might call it
+        return {
+            'keys': {},
+            'mouse': {'x': 0, 'y': 0, 'dx': 0, 'dy': 0},
+            'quit': False
+        }
+
+`;
+                    
+                    pythonCode = before + browserRenderer + after;
+                }
+                
+                return pythonCode;
+            } catch (error) {
+                console.error('Failed to load kopis_engine.py:', error);
+                console.warn('Using fallback simplified engine. Make sure kopis_engine.py is in the same directory.');
+                // Fallback to simplified version if file can't be loaded
+                // Note: For local file access, you may need to serve via HTTP server
+                // For now, we'll throw the error to show it to the user
+                throw error;
+            }
+        }
+
+        // Fallback simplified engine (used if kopis_engine.py can't be loaded)
+        function getFallbackPythonCode() {
+            return `
+# Simplified Kopis Engine for Browser (Pyodide)
+# Note: Transformers/pygame dependencies removed for browser compatibility
+
+from enum import Enum
+import json
+import time
+import math
+import random
+
+class GameState(Enum):
+    MENU = "menu"
+    PLAYING = "playing"
+    PAUSED = "paused"
+    GAME_OVER = "game_over"
+    VICTORY = "victory"
+
+# Simplified Game of Life for blood patterns
+class GameOfLife:
+    """Conway's Game of Life for blood patterns (simplified for browser)"""
+    def __init__(self, seed=None):
+        self.width = 100
+        self.height = 100
+        self.grid = [[False for _ in range(self.width)] for _ in range(self.height)]
+        self.frame_count = 0
+        
+        # Initialize with blood-dripping pattern
+        if seed is not None:
+            rng = random.Random(seed)
+        else:
+            rng = random.Random()
+        
+        for y in range(self.height):
+            for x in range(self.width):
+                top_prob = 0.4
+                bottom_prob = 0.1
+                prob = top_prob - (top_prob - bottom_prob) * (y / self.height)
+                if rng.random() < prob:
+                    self.grid[y][x] = True
+    
+    def update(self):
+        """Update according to Conway's Game of Life rules"""
+        new_grid = [[False for _ in range(self.width)] for _ in range(self.height)]
+        
+        for y in range(self.height):
+            for x in range(self.width):
+                # Count neighbors
+                neighbors = 0
+                for dy in [-1, 0, 1]:
+                    for dx in [-1, 0, 1]:
+                        if dx == 0 and dy == 0:
+                            continue
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < self.width and 0 <= ny < self.height:
+                            if self.grid[ny][nx]:
+                                neighbors += 1
+                
+                # Apply rules
+                if self.grid[y][x]:
+                    # Live cell survives with 2-3 neighbors
+                    new_grid[y][x] = neighbors == 2 or neighbors == 3
+                else:
+                    # Dead cell becomes alive with 3 neighbors
+                    new_grid[y][x] = neighbors == 3
+        
+        self.grid = new_grid
+        self.frame_count += 1
+    
+    def get_pattern(self):
+        """Get pattern as 2D list (for compatibility with numpy arrays)"""
+        return self.grid
+
+# Simple entity class (not using dataclass for better Pyodide compatibility)
+class GameEntity:
+    def __init__(self, id, position=None, velocity=None, health=100.0, description="", properties=None):
+        self.id = id
+        self.position = position if position is not None else (0.0, 0.0, 0.0)
+        self.velocity = velocity if velocity is not None else (0.0, 0.0, 0.0)
+        self.health = health
+        self.description = description
+        self.properties = properties if properties is not None else {}
+
+# Simplified Maze class for browser (fallback)
+class SimpleMazeChunk:
+    def __init__(self, chunk_x, chunk_y, chunk_size, cell_size):
+        self.chunk_x = chunk_x
+        self.chunk_y = chunk_y
+        self.chunk_size = chunk_size
+        self.cell_size = cell_size
+        self.walls = set()
+        self._generate_chunk()
+    
+    def _generate_chunk(self):
+        """Generate a simple maze pattern for this chunk"""
+        import random
+        import hashlib
+        
+        # Deterministic seed from chunk coordinates
+        seed_str = str(self.chunk_x) + '_' + str(self.chunk_y)
+        seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
+        rng = random.Random(seed)
+        
+        # Generate walls in a simple pattern (about 30% walls)
+        for y in range(self.chunk_size):
+            for x in range(self.chunk_size):
+                # Border walls
+                if x == 0 or x == self.chunk_size - 1 or y == 0 or y == self.chunk_size - 1:
+                    # Leave some openings for connections
+                    if not (x == 0 and y % 3 == 1) and not (x == self.chunk_size - 1 and y % 3 == 1):
+                        if not (y == 0 and x % 3 == 1) and not (y == self.chunk_size - 1 and x % 3 == 1):
+                            self.walls.add((x, y))
+                # Internal walls (random pattern)
+                elif rng.random() < 0.3:
+                    self.walls.add((x, y))
+
+class SimpleMaze:
+    """Simplified infinite maze for browser (fallback version)"""
+    def __init__(self, chunk_size=20, cell_size=30.0, load_radius=3):
+        self.chunk_size = chunk_size
+        self.cell_size = cell_size
+        self.load_radius = load_radius
+        self.chunks = {}
+        self.last_cleanup_pos = (0, 0)
+    
+    def _get_chunk_coords(self, world_pos):
+        """Get chunk coordinates from world position"""
+        world_cell_x = int(world_pos[0] / self.cell_size)
+        world_cell_y = int(world_pos[1] / self.cell_size)
+        chunk_x = world_cell_x // self.chunk_size
+        chunk_y = world_cell_y // self.chunk_size
+        # Handle negative coordinates
+        if world_cell_x < 0:
+            chunk_x = (world_cell_x - self.chunk_size + 1) // self.chunk_size
+        if world_cell_y < 0:
+            chunk_y = (world_cell_y - self.chunk_size + 1) // self.chunk_size
+        return (chunk_x, chunk_y)
+    
+    def _get_or_create_chunk(self, chunk_x, chunk_y):
+        """Get existing chunk or create new one"""
+        chunk_key = (chunk_x, chunk_y)
+        if chunk_key not in self.chunks:
+            self.chunks[chunk_key] = SimpleMazeChunk(chunk_x, chunk_y, self.chunk_size, self.cell_size)
+        return self.chunks[chunk_key]
+    
+    def _ensure_chunks_loaded(self, world_pos):
+        """Ensure chunks around a world position are loaded"""
+        # Extract X/Y coordinates (ignore Z for 2D maze)
+        if len(world_pos) == 3:
+            world_pos_2d = (world_pos[0], world_pos[1])
+        else:
+            world_pos_2d = world_pos
+        center_chunk_x, center_chunk_y = self._get_chunk_coords(world_pos_2d)
+        
+        # Load chunks in radius
+        for dx in range(-self.load_radius, self.load_radius + 1):
+            for dy in range(-self.load_radius, self.load_radius + 1):
+                chunk_x = center_chunk_x + dx
+                chunk_y = center_chunk_y + dy
+                self._get_or_create_chunk(chunk_x, chunk_y)
+    
+    def check_collision(self, position, radius):
+        """Check if position collides with walls"""
+        # Extract X/Y coordinates
+        if len(position) == 3:
+            world_x, world_y = position[0], position[1]
+        else:
+            world_x, world_y = position[0], position[1]
+        
+        # Ensure chunks are loaded
+        self._ensure_chunks_loaded((world_x, world_y))
+        
+        # Get chunk and local coordinates
+        chunk_x, chunk_y = self._get_chunk_coords((world_x, world_y))
+        chunk = self._get_or_create_chunk(chunk_x, chunk_y)
+        
+        # Convert world to local cell coordinates
+        world_cell_x = int(world_x / self.cell_size)
+        world_cell_y = int(world_y / self.cell_size)
+        local_x = ((world_cell_x % self.chunk_size) + self.chunk_size) % self.chunk_size
+        local_y = ((world_cell_y % self.chunk_size) + self.chunk_size) % self.chunk_size
+        
+        # Check if this cell is a wall
+        if (local_x, local_y) in chunk.walls:
+            return True
+        
+        # Check adjacent cells within radius
+        radius_cells = int(radius / self.cell_size) + 1
+        for dx in range(-radius_cells, radius_cells + 1):
+            for dy in range(-radius_cells, radius_cells + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                check_x = local_x + dx
+                check_y = local_y + dy
+                # Check if we need to look in adjacent chunk
+                if check_x < 0 or check_x >= self.chunk_size or check_y < 0 or check_y >= self.chunk_size:
+                    adj_chunk_x = chunk_x
+                    adj_chunk_y = chunk_y
+                    adj_local_x = check_x
+                    adj_local_y = check_y
+                    if check_x < 0:
+                        adj_chunk_x -= 1
+                        adj_local_x = self.chunk_size - 1
+                    elif check_x >= self.chunk_size:
+                        adj_chunk_x += 1
+                        adj_local_x = 0
+                    if check_y < 0:
+                        adj_chunk_y -= 1
+                        adj_local_y = self.chunk_size - 1
+                    elif check_y >= self.chunk_size:
+                        adj_chunk_y += 1
+                        adj_local_y = 0
+                    
+                    adj_chunk = self._get_or_create_chunk(adj_chunk_x, adj_chunk_y)
+                    if (adj_local_x, adj_local_y) in adj_chunk.walls:
+                        # Check distance
+                        adj_world_x = adj_chunk_x * self.chunk_size * self.cell_size + adj_local_x * self.cell_size
+                        adj_world_y = adj_chunk_y * self.chunk_size * self.cell_size + adj_local_y * self.cell_size
+                        dist = math.sqrt((world_x - adj_world_x)**2 + (world_y - adj_world_y)**2)
+                        if dist < radius:
+                            return True
+                else:
+                    if (check_x, check_y) in chunk.walls:
+                        check_world_x = chunk_x * self.chunk_size * self.cell_size + check_x * self.cell_size
+                        check_world_y = chunk_y * self.chunk_size * self.cell_size + check_y * self.cell_size
+                        dist = math.sqrt((world_x - check_world_x)**2 + (world_y - check_world_y)**2)
+                        if dist < radius:
+                            return True
+        
+        return False
+
+# Simplified game engine for browser
+class SimpleEngine:
+    def __init__(self):
+        self.entities = []
+        self.player = None
+        self.frame_count = 0
+        self.camera_pos = (0.0, 0.0, 150.0)
+        self.camera_yaw = 0.0
+        self.camera_pitch = 0.0
+        self.camera_roll = 0.0
+        self.fpv_mode = True  # Enable 3D FPV mode by default
+        
+    def add_entity(self, entity):
+        self.entities.append(entity)
+        if entity.id == 'player':
+            self.player = entity
+    
+    def process_frame(self, input_data):
+        self.frame_count += 1
+        
+        # Safely extract keys and mouse, handle both dict and object types
+        try:
+            if isinstance(input_data, dict):
+                keys = input_data.get('keys', {})
+                mouse = input_data.get('mouse', {})
+            else:
+                # Handle if input_data is a JavaScript object
+                keys = getattr(input_data, 'keys', {})
+                mouse = getattr(input_data, 'mouse', {})
+        except:
+            keys = {}
+            mouse = {}
+        
+        # Ensure keys and mouse are dictionaries
+        if not isinstance(keys, dict):
+            keys = {}
+        if not isinstance(mouse, dict):
+            mouse = {}
+        
+        if self.player:
+            # Simple movement
+            speed = 100.0
+            vx, vy = 0.0, 0.0
+            
+            # Safely get key states
+            if keys.get('w', False):
+                vy -= speed
+            if keys.get('s', False):
+                vy += speed
+            if keys.get('a', False):
+                vx -= speed
+            if keys.get('d', False):
+                vx += speed
+            
+            # Update position (tuples are immutable, so create new tuple)
+            x, y, z = self.player.position
+            x += vx * 0.016
+            y += vy * 0.016
+            
+            # Create new position tuple
+            self.player.position = (x, y, z)
+            self.camera_pos = (x, y, 150.0)
+            
+            # Update camera rotation
+            self.camera_yaw += mouse.get('dx', 0) * 0.1
+            self.camera_pitch += mouse.get('dy', 0) * 0.1
+
+# Browser renderer using JavaScript Canvas API
+class BrowserRenderer:
+    def __init__(self, width=1280, height=720, maze=None):
+        self.width = width
+        self.height = height
+        self.maze = maze
+        self.mouse_captured = False
+        js = __import__('js')
+        self.canvas = js.document.getElementById('gameCanvas')
+        self.ctx = self.canvas.getContext('2d')
+        
+        # Game of Life for blood patterns (if available)
+        try:
+            self.shared_game_of_life = GameOfLife(seed=42)
+            self.game_of_life_update_counter = 0
+        except:
+            self.shared_game_of_life = None
+            self.game_of_life_update_counter = 0
+        
+        # Colors
+        self.BLACK = (0, 0, 0)
+        self.WHITE = (255, 255, 255)
+        self.BLUE = (0, 100, 255)
+        self.RED = (255, 0, 0)
+        self.GREEN = (0, 255, 0)
+        self.YELLOW = (255, 255, 0)
+        self.GRAY = (128, 128, 128)
+        self.WALL_COLOR = (60, 60, 80)
+        self.PATH_COLOR = (20, 20, 30)
+        
+    def clear(self, color=(0, 0, 0)):
+        self.ctx.fillStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+        self.ctx.fillRect(0, 0, self.width, self.height)
+    
+    def draw_rect(self, x, y, w, h, color):
+        self.ctx.fillStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+        self.ctx.fillRect(int(x), int(y), int(w), int(h))
+    
+    def draw_line(self, x1, y1, x2, y2, color):
+        self.ctx.strokeStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+        self.ctx.beginPath()
+        self.ctx.moveTo(int(x1), int(y1))
+        self.ctx.lineTo(int(x2), int(y2))
+        self.ctx.stroke()
+    
+    def draw_circle(self, x, y, radius, color):
+        self.ctx.fillStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+        self.ctx.beginPath()
+        self.ctx.arc(int(x), int(y), int(radius), 0, 2 * math.pi)
+        self.ctx.fill()
+    
+    def render(self, entities, camera_pos, frame_count, fps, camera_yaw=0.0, camera_pitch=0.0, camera_roll=0.0, fpv_mode=False):
+        """Render using Canvas API - 3D raycasting like PygameRenderer"""
+        import math
+        try:
+            # Clear screen
+            self.clear(self.BLACK)
+            
+            # Extract camera position
+            if len(camera_pos) == 3:
+                cam_x, cam_y, cam_z = camera_pos
+            else:
+                cam_x, cam_y = camera_pos
+                cam_z = 0.0
+            
+            # Always use 3D rendering if in FPV mode
+            if fpv_mode:
+                # Doom-style 3D raycasting
+                FOV = 60.0
+                MAX_DEPTH = 1000.0
+                
+                yaw_rad = math.radians(camera_yaw)
+                pitch_rad = math.radians(camera_pitch)
+                forward_x = math.sin(yaw_rad)
+                forward_y = -math.cos(yaw_rad)
+                right_x = math.cos(yaw_rad)
+                right_y = math.sin(yaw_rad)
+                
+                # Draw floor and ceiling first (Doom-style)
+                half_height = self.height / 2
+                horizon_y = half_height - math.tan(pitch_rad) * (self.height / 2)
+                
+                # Ceiling
+                ceiling_bottom = max(0, int(horizon_y))
+                self.draw_rect(0, 0, self.width, ceiling_bottom, (26, 26, 26))
+                
+                # Floor
+                floor_top = min(self.height, int(horizon_y))
+                self.draw_rect(0, floor_top, self.width, self.height - floor_top, (42, 42, 42))
+                
+                # Render Game of Life blood pattern on floor and ceiling if available
+                if self.shared_game_of_life:
+                    try:
+                        pattern = self.shared_game_of_life.get_pattern()
+                        gol_height = self.shared_game_of_life.height
+                        gol_width = self.shared_game_of_life.width
+                        
+                        # Adaptive sample rate
+                        sample_rate = 2 if fps < 60 else (3 if fps < 100 else 4)
+                        
+                        # Ceiling blood
+                        if ceiling_bottom > 0:
+                            ceiling_height = ceiling_bottom
+                            cell_h = max(1, ceiling_height / gol_height)
+                            cell_w = max(1, self.width / gol_width)
+                            
+                            if cell_h >= 1 and cell_w >= 1:
+                                    for y in range(0, gol_height, sample_rate):
+                                        for x in range(0, gol_width, sample_rate):
+                                            # Handle both list-based and numpy array patterns
+                                            if isinstance(pattern, list):
+                                                pattern_value = pattern[y][x] if y < len(pattern) and x < len(pattern[y]) else False
+                                            else:
+                                                pattern_value = pattern[y, x] if hasattr(pattern, '__getitem__') else False
+                                            
+                                            if pattern_value:
+                                                screen_x = int(x * self.width / gol_width)
+                                                screen_y = int((gol_height - 1 - y) * ceiling_height / gol_height)
+                                                if 0 <= screen_y < ceiling_bottom and 0 <= screen_x < self.width:
+                                                    pixel_seed = hash((x, y, 'ceiling')) % 1000000
+                                                    rng_r = (pixel_seed * 9301 + 49297) % 233280
+                                                    rng_g = (pixel_seed * 7919 + 49307) % 233280
+                                                    rng_b = (pixel_seed * 6997 + 49317) % 233280
+                                                    blood_red = 50 + (rng_r % 206)
+                                                    blood_green = 50 + (rng_g % 206)
+                                                    blood_blue = 50 + (rng_b % 206)
+                                                    self.draw_rect(screen_x, screen_y, max(1, int(cell_w * sample_rate)), 
+                                                                 max(1, int(cell_h * sample_rate)), 
+                                                                 (blood_red, blood_green, blood_blue))
+                        
+                        # Floor blood
+                        if floor_top < self.height:
+                            floor_height = self.height - floor_top
+                            cell_h = max(1, floor_height / gol_height)
+                            cell_w = max(1, self.width / gol_width)
+                            
+                            if cell_h >= 1 and cell_w >= 1:
+                                    for y in range(0, gol_height, sample_rate):
+                                        for x in range(0, gol_width, sample_rate):
+                                            # Handle both list-based and numpy array patterns
+                                            if isinstance(pattern, list):
+                                                pattern_value = pattern[y][x] if y < len(pattern) and x < len(pattern[y]) else False
+                                            else:
+                                                pattern_value = pattern[y, x] if hasattr(pattern, '__getitem__') else False
+                                            
+                                            if pattern_value:
+                                                screen_x = int(x * self.width / gol_width)
+                                                screen_y = floor_top + int(y * floor_height / gol_height)
+                                                if floor_top <= screen_y < self.height and 0 <= screen_x < self.width:
+                                                    pixel_seed = hash((x, y, 'floor')) % 1000000
+                                                    rng_r = (pixel_seed * 9301 + 49297) % 233280
+                                                    rng_g = (pixel_seed * 7919 + 49307) % 233280
+                                                    rng_b = (pixel_seed * 6997 + 49317) % 233280
+                                                    blood_red = 50 + (rng_r % 206)
+                                                    blood_green = 50 + (rng_g % 206)
+                                                    blood_blue = 50 + (rng_b % 206)
+                                                    self.draw_rect(screen_x, screen_y, max(1, int(cell_w * sample_rate)), 
+                                                                 max(1, int(cell_h * sample_rate)), 
+                                                                 (blood_red, blood_green, blood_blue))
+                    except:
+                        pass
+                
+                # Raycast walls if maze is available
+                if hasattr(self, 'maze') and self.maze:
+                    # Raycast walls (adaptive quality based on FPS)
+                    raycast_skip = 1 if fps < 60 else (2 if fps < 100 else 3)
+                    cell_size = self.maze.cell_size
+                    
+                    for x in range(0, self.width, raycast_skip):
+                        # Calculate ray angle
+                        camera_x = 2.0 * x / self.width - 1.0
+                        ray_dir_x = forward_x + right_x * camera_x * math.tan(math.radians(FOV / 2.0))
+                        ray_dir_y = forward_y + right_y * camera_x * math.tan(math.radians(FOV / 2.0))
+                        
+                        # Raycast to find wall
+                        result = self._raycast_wall(cam_x, cam_y, ray_dir_x, ray_dir_y, MAX_DEPTH)
+                        if result:
+                            perp_wall_dist, side = result
+                            distance = perp_wall_dist * cell_size
+                            
+                            # Calculate wall height
+                            line_height = abs(self.height / perp_wall_dist) if perp_wall_dist > 0 else self.height
+                            draw_start = -line_height / 2 + self.height / 2 + math.tan(pitch_rad) * (self.height / 2)
+                            draw_end = line_height / 2 + self.height / 2 + math.tan(pitch_rad) * (self.height / 2)
+                            
+                            # Calculate wall color based on distance
+                            brightness = max(0.3, min(1.0, 1.0 - distance / 500.0))
+                            
+                            # Get wall color (deterministic based on map position)
+                            map_x = int((cam_x + ray_dir_x * perp_wall_dist * cell_size) / cell_size)
+                            map_y = int((cam_y + ray_dir_y * perp_wall_dist * cell_size) / cell_size)
+                            
+                            # Generate deterministic color
+                            seed = hash(str(map_x) + '_' + str(map_y)) % 1000000
+                            rng = (seed * 9301 + 49297) % 233280 / 233280
+                            base_r = int(30 + rng * 50)
+                            base_g = int(25 + rng * 35)
+                            base_b = int(20 + rng * 30)
+                            
+                            # Darker on sides for depth
+                            wall_r = int(base_r * brightness * (0.8 if side == 1 else 1.0))
+                            wall_g = int(base_g * brightness * (0.8 if side == 1 else 1.0))
+                            wall_b = int(base_b * brightness * (0.8 if side == 1 else 1.0))
+                            
+                            # Draw wall column
+                            wall_width = raycast_skip
+                            wall_top = max(0, int(draw_start))
+                            wall_bottom = min(self.height, int(draw_end))
+                            wall_height = wall_bottom - wall_top
+                            if wall_height > 0:
+                                self.draw_rect(x, wall_top, wall_width, wall_height, (wall_r, wall_g, wall_b))
+                            
+                            # Render Game of Life blood pattern on close walls
+                            if self.shared_game_of_life and distance < 200 and x % (raycast_skip * 2) == 0:
+                                try:
+                                    pattern = self.shared_game_of_life.get_pattern()
+                                    gol_height = self.shared_game_of_life.height
+                                    wall_height = draw_end - draw_start
+                                    cell_h = max(1, wall_height / gol_height)
+                                    
+                                    if cell_h >= 1:
+                                        gol_width = self.shared_game_of_life.width
+                                        pattern_x = int(x / self.width * gol_width)
+                                        
+                                    for y in range(gol_height):
+                                        # Handle both list-based and numpy array patterns
+                                        if isinstance(pattern, list):
+                                            pattern_value = pattern[y][pattern_x] if y < len(pattern) and pattern_x < len(pattern[y]) else False
+                                        else:
+                                            pattern_value = pattern[y, pattern_x] if hasattr(pattern, '__getitem__') else False
+                                        
+                                        if pattern_value:
+                                            screen_y = draw_start + (y * wall_height) / gol_height
+                                            if draw_start <= screen_y < draw_end:
+                                                variation = ((x * 7 + y * 11) % 31) - 15
+                                                blood_red = max(120, min(200, int(139 + (y / gol_height) * 39 + variation)))
+                                                blood_green = max(0, min(60, int((y / gol_height) * 34 + variation // 2)))
+                                                blood_blue = max(0, min(50, int((y / gol_height) * 33 + variation // 3)))
+                                                
+                                                self.draw_rect(x, int(screen_y), raycast_skip, max(1, int(cell_h)), 
+                                                             (blood_red, blood_green, blood_blue))
+                                except:
+                                    pass
+            else:
+                # 2D fallback - draw grid
+                grid_size = 50
+                cx, cy = self.width // 2, self.height // 2
+                
+                self.ctx.strokeStyle = 'rgba(100, 100, 120, 0.3)'
+                self.ctx.lineWidth = 1
+                for i in range(-20, 21):
+                    x = cx + i * grid_size
+                    y = cy + i * grid_size
+                    self.ctx.beginPath()
+                    self.ctx.moveTo(x, 0)
+                    self.ctx.lineTo(x, self.height)
+                    self.ctx.stroke()
+                    self.ctx.beginPath()
+                    self.ctx.moveTo(0, y)
+                    self.ctx.lineTo(self.width, y)
+                    self.ctx.stroke()
+            
+            # Draw entities as 3D sprites (billboard rendering with proper depth sorting)
+            if fpv_mode:
+                # 3D billboard sprite rendering
+                sorted_entities = sorted(entities, key=lambda e: (
+                    (e.position[0] - cam_x)**2 + (e.position[1] - cam_y)**2 + 
+                    (e.position[2] - cam_z)**2 if len(e.position) == 3 else 
+                    (e.position[0] - cam_x)**2 + (e.position[1] - cam_y)**2
+                ), reverse=True)
+                
+                pitch_rad = math.radians(camera_pitch)
+                
+                for entity in sorted_entities:
+                    try:
+                        if len(entity.position) >= 2:
+                            ex, ey = entity.position[0], entity.position[1]
+                            ez = entity.position[2] if len(entity.position) == 3 else 0.0
+                            
+                            # Calculate 3D distance and position
+                            dx = ex - cam_x
+                            dy = ey - cam_y
+                            dz = ez - cam_z
+                            
+                            # Rotate by camera yaw
+                            cos_yaw = math.cos(math.radians(camera_yaw))
+                            sin_yaw = math.sin(math.radians(camera_yaw))
+                            rotated_x = dx * cos_yaw - dy * sin_yaw
+                            rotated_y = dx * sin_yaw + dy * cos_yaw
+                            
+                            # 3D distance
+                            distance_3d = math.sqrt(rotated_x**2 + rotated_y**2 + dz**2)
+                            
+                            if distance_3d > 0.1 and rotated_y > 0:  # Only render if in front of camera
+                                # Project to screen with perspective (3D)
+                                fov_scale = 1.0 / math.tan(math.radians(60.0 / 2.0))
+                                depth = max(0.1, rotated_y)
+                                
+                                screen_x = self.width / 2 + (rotated_x / depth) * fov_scale * (self.height / 2)
+                                screen_y = self.height / 2 - (dz / depth) * fov_scale * (self.height / 2) + math.tan(pitch_rad) * (self.height / 2)
+                                
+                                # Scale sprite size based on distance
+                                sprite_size = max(5, min(40, 300 / max(1, distance_3d)))
+                                
+                                if 0 <= screen_x < self.width and 0 <= screen_y < self.height:
+                                    if entity.id == 'player':
+                                        color = self.BLUE
+                                    else:
+                                        color = self.RED
+                                    
+                                    # Draw as circle (billboard sprite)
+                                    self.draw_circle(screen_x, screen_y, int(sprite_size), color)
+                    except Exception as e:
+                        pass
+            else:
+                # 2D fallback rendering
+                for entity in entities:
+                    try:
+                        if len(entity.position) >= 2:
+                            ex, ey = entity.position[0], entity.position[1]
+                            dx = ex - cam_x
+                            dy = ey - cam_y
+                            
+                            # Simple 2D projection
+                            cos_yaw = math.cos(math.radians(camera_yaw))
+                            sin_yaw = math.sin(math.radians(camera_yaw))
+                            rotated_x = dx * cos_yaw - dy * sin_yaw
+                            rotated_y = dx * sin_yaw + dy * cos_yaw
+                            
+                            screen_x = self.width / 2 + rotated_x
+                            screen_y = self.height / 2 + rotated_y
+                            
+                            if 0 <= screen_x < self.width and 0 <= screen_y < self.height:
+                                if entity.id == 'player':
+                                    self.draw_circle(screen_x, screen_y, 15, self.BLUE)
+                                else:
+                                    self.draw_circle(screen_x, screen_y, 10, self.RED)
+                    except Exception as e:
+                        pass
+            
+            # Update Game of Life periodically
+            if self.shared_game_of_life:
+                self.game_of_life_update_counter += 1
+                if self.game_of_life_update_counter >= 10:
+                    self.game_of_life_update_counter = 0
+                    try:
+                        self.shared_game_of_life.update()
+                    except:
+                        pass
+            
+            # Draw FPS
+            self.ctx.fillStyle = 'rgb(255, 255, 255)'
+            self.ctx.font = '16px monospace'
+            self.ctx.fillText('FPS: ' + str(fps), 10, 30)
+            self.ctx.fillText('Frame: ' + str(frame_count), 10, 50)
+            if fpv_mode:
+                self.ctx.fillText('3D Mode', 10, 70)
+        except Exception as e:
+            js = __import__('js')
+            js.console.error('Render error:', str(e))
+`;
+        }
+
+        // Set up JavaScript bridge for Canvas operations
+        function setupCanvasBridge() {
+            // Make canvas accessible to Python
+            pyodide.runPython(`
+                import js
+                js.console.log("Canvas bridge set up")
+            `);
+        }
+
+        // Game loop
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            const currentTime = performance.now();
+            const deltaTime = (currentTime - lastFrameTime) / 1000.0;
+            lastFrameTime = currentTime;
+
+            // Update FPS counter
+            frameCount++;
+            const now = Date.now();
+            if (now - fpsLastTime >= 1000) {
+                fps = frameCount;
+                frameCount = 0;
+                fpsLastTime = now;
+                document.getElementById('fps').textContent = fps;
+                try {
+                    document.getElementById('frame').textContent = pyodide.runPython('str(js.gameState["engine"].frame_count)');
+                } catch (e) {
+                    // Frame count might not be available yet
+                }
+            }
+
+            try {
+                // Get input state
+                const keysState = getKeyState();
+                const mouseState = getMouseState();
+
+                // Update game - use JSON to ensure proper Python dict conversion
+                // Escape single quotes in JSON strings
+                const keysJson = JSON.stringify(keysState).replace(/'/g, "\\'");
+                const mouseJson = JSON.stringify(mouseState).replace(/'/g, "\\'");
+                
+                // Escape backticks and ${} in JSON strings to prevent template literal issues
+                const safeKeysJson = keysJson.replace(/`/g, '\\`').replace(/\${/g, '\\${');
+                const safeMouseJson = mouseJson.replace(/`/g, '\\`').replace(/\${/g, '\\${');
+                
+                pyodide.runPython(`
+                    import json
+                    keys_json = r'''${safeKeysJson}'''
+                    mouse_json = r'''${safeMouseJson}'''
+                    input_data = {
+                        'keys': json.loads(keys_json),
+                        'mouse': json.loads(mouse_json)
+                    }
+                    js.gameState['engine'].process_frame(input_data)
+                `);
+
+                // Render - handle both full engine and simplified engine
+                pyodide.runPython(`
+                    engine = js.gameState['engine']
+                    renderer = js.gameState['renderer']
+                    entities = engine.entities
+                    camera_pos = engine.camera_pos
+                    camera_yaw = engine.camera_yaw
+                    camera_pitch = engine.camera_pitch
+                    frame_count = engine.frame_count
+                    
+                    # Check if engine has fpv_mode and camera_roll (full engine) or use defaults
+                    fpv_mode = getattr(engine, 'fpv_mode', True)
+                    camera_roll = getattr(engine, 'camera_roll', 0.0)
+                    
+                    # Use the renderer's render method (same signature as PygameRenderer)
+                    renderer.render(entities, camera_pos, frame_count, ` + fps + `, 
+                                  camera_yaw, camera_pitch, camera_roll, fpv_mode)
+                `);
+
+            } catch (error) {
+                console.error('Game loop error:', error);
+                document.getElementById('pythonStatus').textContent = 'Error: ' + error.message;
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Input handling
+        const keys = {};
+        const mouse = { x: 0, y: 0, dx: 0, dy: 0, captured: false };
+
+        function getKeyState() {
+            return {
+                'w': keys['w'] || false,
+                'a': keys['a'] || false,
+                's': keys['s'] || false,
+                'd': keys['d'] || false,
+                'space': keys[' '] || false,
+                'escape': keys['Escape'] || false
+            };
+        }
+
+        function getMouseState() {
+            const result = { x: mouse.x, y: mouse.y, dx: mouse.dx, dy: mouse.dy, captured: mouse.captured };
+            mouse.dx = 0;
+            mouse.dy = 0;
+            return result;
+        }
+
+        function setupInputHandlers() {
+            const canvas = document.getElementById('gameCanvas');
+            
+            canvas.addEventListener('keydown', (e) => {
+                keys[e.key] = true;
+                if (e.key === 'Escape') {
+                    mouse.captured = false;
+                    canvas.style.cursor = 'default';
+                }
+            });
+
+            canvas.addEventListener('keyup', (e) => {
+                keys[e.key] = false;
+            });
+
+            canvas.addEventListener('mousedown', (e) => {
+                canvas.focus();
+                mouse.captured = true;
+                canvas.style.cursor = 'none';
+                // Request pointer lock
+                canvas.requestPointerLock();
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                if (mouse.captured) {
+                    mouse.dx += e.movementX || 0;
+                    mouse.dy += e.movementY || 0;
+                    mouse.x += e.movementX || 0;
+                    mouse.y += e.movementY || 0;
+                }
+            });
+        }
+
+        // Make keys and mouse accessible to Python via Pyodide
+        // These will be accessed through js.js_keys and js.js_mouse in Python
+
+        // Loading helpers
+        function updateProgress(percent) {
+            document.getElementById('progressBar').style.width = percent + '%';
+        }
+
+        function updateLoadingStatus(text) {
+            document.getElementById('loadingStatus').textContent = text;
+        }
+
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').classList.add('active');
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        // Epilepsy warning handler
+        function startGame() {
+            // Hide epilepsy warning
+            const warning = document.getElementById('epilepsyWarning');
+            if (warning) {
+                warning.classList.add('hidden');
+            }
+
+            setTimeout(() => {
+                initPyodide();
+            }, 500); // Small delay for visual effect
+        }
+
+        // Show epilepsy warning when page loads
+        window.addEventListener('load', () => {
+            const acknowledgeButton = document.getElementById('acknowledgeWarning');
+            if (acknowledgeButton) {
+                acknowledgeButton.addEventListener('click', startGame);
+            } else {
+                // Fallback: if button not found, start game after delay
+                setTimeout(startGame, 1000);
+            }
+        });
+    </script>
+</body>
+</html>
