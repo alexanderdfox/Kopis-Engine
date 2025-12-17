@@ -591,9 +591,42 @@ js.gameState = {
                 pythonCode = pythonCode.replace(/import pygame/g, '# import pygame  # Not available in browser');
                 pythonCode = pythonCode.replace(/from pygame/g, '# from pygame  # Not available in browser');
                 pythonCode = pythonCode.replace(/PYGAME_AVAILABLE = True/g, 'PYGAME_AVAILABLE = False');
-                
+
                 // Make torch/transformers optional (they already have try/except, but ensure they fail gracefully)
                 pythonCode = pythonCode.replace(/^import torch$/m, 'try:\n    import torch\nexcept:\n    torch = None');
+                
+                // Replace transformers imports - simpler approach: find and replace the entire import block
+                const lines = pythonCode.split('\n');
+                let newLines = [];
+                let i = 0;
+                while (i < lines.length) {
+                    if (lines[i].trim().startsWith('from transformers import')) {
+                        // Found transformers import - collect all lines until closing paren
+                        let importLines = [lines[i]];
+                        let parenCount = (lines[i].match(/\(/g) || []).length - (lines[i].match(/\)/g) || []).length;
+                        i++;
+                        while (i < lines.length && parenCount > 0) {
+                            importLines.push(lines[i]);
+                            parenCount += (lines[i].match(/\(/g) || []).length - (lines[i].match(/\)/g) || []).length;
+                            i++;
+                        }
+                        // Replace with try/except block
+                        const indentedImport = importLines.map(line => '    ' + line).join('\n');
+                        newLines.push('try:');
+                        newLines.push(indentedImport);
+                        newLines.push('except:');
+                        newLines.push('    # transformers not available in browser');
+                        newLines.push('    AutoModelForSequenceClassification = None');
+                        newLines.push('    pipeline = None');
+                    } else {
+                        newLines.push(lines[i]);
+                        i++;
+                    }
+                }
+                pythonCode = newLines.join('\n');
+                
+                // Also handle standalone transformers import if it exists
+                pythonCode = pythonCode.replace(/^import transformers$/m, 'try:\n    import transformers\nexcept:\n    transformers = None');
                 
                 // Replace PygameRenderer class with BrowserRenderer
                 // Find the PygameRenderer class and replace it
