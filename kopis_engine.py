@@ -40,6 +40,11 @@ class GameState(Enum):
     VICTORY = "victory"
 
 
+# Constants for height measurements
+FEET_TO_UNITS = 30.0  # 1 foot = 30 units
+STORY_HEIGHT_UNITS = 10.0 * FEET_TO_UNITS  # 10 feet = 300 units
+PLAYER_HEIGHT_UNITS = 6.0 * FEET_TO_UNITS  # 6 feet = 180 units
+
 @dataclass
 class GameEntity:
     """Represents a game entity (player, NPC, object) - 3D coordinates"""
@@ -49,6 +54,7 @@ class GameEntity:
     health: float = 100.0
     description: str = ""
     properties: Dict[str, Any] = field(default_factory=dict)
+    height: float = PLAYER_HEIGHT_UNITS  # Entity height in units (default 6 feet = 180 units)
 
 
 @dataclass
@@ -195,8 +201,8 @@ class ParallelBranches:
         # In game units: 32.2 ft/s² * 30 units/ft = 966 units/s²
         gravity = 32.2 * 30  # Realistic gravity: 966 units/s² (based on 1 foot = 30 units)
         friction_coefficient = 0.95  # Friction factor (0.95 = 5% velocity loss per frame)
-        ground_level = 0.0  # Ground is at Z = 0 (positive Z is up in the air)
-        ceiling_level = 300.0  # Ceiling is at Z = 300 units (10 feet = 300 units at 30 units/foot)
+        # No hard ground/ceiling limits - infinite levels supported
+        # Ground and ceiling heights are determined per-cell by maze geometry
         
         for entity in entities:
             # Get current state (3D)
@@ -208,8 +214,8 @@ class ParallelBranches:
             # When vz is positive (moving up), gravity reduces it
             # When vz is negative (falling), gravity makes it more negative (faster fall)
             if entity.properties.get('affected_by_gravity', True):
-                # Always apply gravity - this ensures entities fall back down after jumping
-                # Ground collision below will stop downward velocity when hitting the ground
+                # Always apply gravity - this ensures entities fall when in the air
+                # Only stop falling when hitting the ground (checked in collision below)
                 vz -= gravity * delta_time  # Gravity always pulls down (decreases vz)
             
             # Apply friction (only to X and Y, not Z)
@@ -237,24 +243,90 @@ class ParallelBranches:
             new_y = y + vy * delta_time
             new_z = z + vz * delta_time
             
-            # Ground collision (Z axis) - prevent going below ground
-            if new_z < ground_level:
-                new_z = ground_level
-                if vz < 0:  # Only stop downward velocity if hitting ground
-                    vz = 0
-                # Mark as on ground
-                entity.properties['on_ground'] = True
+            # Ground and ceiling collision (Z axis) - check per-cell heights from maze
+            if maze:
+                # Get the cell we're in
+                cell_x = int(new_x / maze.cell_size)
+                cell_y = int(new_y / maze.cell_size)
+                chunk_x, chunk_y = maze._get_chunk_coords((new_x, new_y))
+                chunk = maze._get_or_create_chunk(chunk_x, chunk_y)
+                local_x = ((cell_x % maze.chunk_size) + maze.chunk_size) % maze.chunk_size
+                local_y = ((cell_y % maze.chunk_size) + maze.chunk_size) % maze.chunk_size
+                
+                # Calculate which level we're on (each level is 10 feet = 300 units high)
+                level = int(new_z / STORY_HEIGHT_UNITS)
+                base_floor_z = level * STORY_HEIGHT_UNITS
+                base_ceiling_z = (level + 1) * STORY_HEIGHT_UNITS
+                
+                # Check for stairs - calculate floor height based on stair slope
+                stair_info = chunk.stairs.get((local_x, local_y))
+                floor_z = base_floor_z
+                if stair_info:
+                    # Calculate position within the cell (0.0 to 1.0)
+                    # For simplicity, use a simple linear interpolation across the cell
+                    # In a more advanced implementation, we'd track which direction the stairs face
+                    cell_world_x = cell_x * maze.cell_size
+                    cell_world_y = cell_y * maze.cell_size
+                    cell_center_x = cell_world_x + maze.cell_size / 2.0
+                    cell_center_y = cell_world_y + maze.cell_size / 2.0
+                    
+                    # Determine stair height based on direction and position
+                    target_level_offset = stair_info['target_level']
+                    stair_height_range = STORY_HEIGHT_UNITS * target_level_offset  # Total height change
+                    
+                    # For up stairs, floor slopes from current level to next level
+                    # For down stairs, floor slopes from current level to previous level
+                    # Calculate how far along the stair we are (using X position within cell)
+                    progress = (new_x - cell_world_x) / maze.cell_size
+                    # Clamp progress to [0, 1]
+                    if progress < 0.0:
+                        progress = 0.0
+                    elif progress > 1.0:
+                        progress = 1.0
+                    
+                    if stair_info['direction'] == 'up':
+                        # Stairs go from floor_z to floor_z + STORY_HEIGHT_UNITS
+                        floor_z = base_floor_z + progress * STORY_HEIGHT_UNITS
+                    else:  # down
+                        # Stairs go from floor_z to floor_z - STORY_HEIGHT_UNITS
+                        floor_z = base_floor_z - progress * STORY_HEIGHT_UNITS
+                    
+                    ceiling_z = floor_z + STORY_HEIGHT_UNITS  # Ceiling is always 10 feet above floor
+                else:
+                    ceiling_z = base_ceiling_z
+                
+                # Solid floor collision (no holes allow falling through)
+                if new_z < floor_z:
+                    # Hit or below floor - snap to floor and stop falling
+                    new_z = floor_z
+                    if vz < 0:  # Only stop downward velocity if hitting ground
+                        vz = 0
+                    entity.properties['on_ground'] = True
+                elif abs(new_z - floor_z) < 2.0 and abs(vz) < 10.0:  # Very close to floor and slow velocity
+                    # Snapping to floor when very close and slow (prevents jitter)
+                    new_z = floor_z
+                    if vz < 0:
+                        vz = 0
+                    entity.properties['on_ground'] = True
+                else:
+                    # In the air - allow falling
+                    entity.properties['on_ground'] = False
+                
+                # Solid ceiling collision (no holes allow passing through)
+                if new_z > ceiling_z:
+                    new_z = ceiling_z
+                    if vz > 0:  # Only stop upward velocity if hitting ceiling
+                        vz = 0  # Stop upward velocity, gravity will pull down
+                    entity.properties['on_ground'] = False
             else:
-                # In the air
-                entity.properties['on_ground'] = False
-            
-            # Ceiling collision (Z axis) - prevent going above ceiling and make player fall
-            if new_z > ceiling_level:
-                new_z = ceiling_level
-                if vz > 0:  # Only stop upward velocity if hitting ceiling
-                    vz = 0  # Stop upward velocity, gravity will pull down
-                # Mark as hitting ceiling (will fall due to gravity)
-                entity.properties['on_ground'] = False
+                # No maze - use simple ground level check
+                if new_z < 0.0:
+                    new_z = 0.0
+                    if vz < 0:
+                        vz = 0
+                    entity.properties['on_ground'] = True
+                else:
+                    entity.properties['on_ground'] = False
             
             # Check maze collision if maze exists (X/Y plane only)
             entity_radius = entity.properties.get('radius', 10.0)
@@ -811,6 +883,7 @@ class KopisEngine:
         self.frame_count = 0
         self.last_frame_time = time.time()
         self.last_player_pos = None
+        self.npc_damage_cooldowns = {}  # Track damage cooldowns per NPC
         
         # Camera system for smooth scrolling (3D) with FPV support and 6DOF
         self.camera_pos = (0.0, 0.0, 0.0)  # (x, y, z) - 3D camera position
@@ -962,6 +1035,67 @@ class KopisEngine:
         if entity.id == 'player':
             self.player = entity
     
+    def _check_npc_collisions(self, delta_time: float):
+        """
+        Check if player is touching any NPCs and apply damage with cooldown
+        Player loses 5 health when touching an NPC, with 0.5 second cooldown per NPC
+        """
+        if not self.player:
+            return
+        
+        import math
+        import time
+        
+        current_time = time.time()
+        player_pos = self.player.position
+        player_radius = self.player.properties.get('radius', 12.0)
+        
+        for entity in self.entities:
+            # Only check NPCs
+            if entity.id == 'player' or 'npc' not in entity.id:
+                continue
+            
+            npc_pos = entity.position
+            npc_radius = entity.properties.get('radius', 8.0)
+            
+            # Calculate 3D distance
+            dx = player_pos[0] - npc_pos[0]
+            dy = player_pos[1] - npc_pos[1]
+            dz = player_pos[2] - npc_pos[2] if len(player_pos) == 3 and len(npc_pos) == 3 else 0.0
+            distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+            
+            # Check if touching (combined radii)
+            combined_radius = player_radius + npc_radius
+            if distance < combined_radius:
+                # Check cooldown (0.5 seconds per NPC)
+                last_damage_time = self.npc_damage_cooldowns.get(entity.id, 0)
+                cooldown_duration = 0.5  # 0.5 seconds
+                
+                if current_time - last_damage_time >= cooldown_duration:
+                    # Apply damage
+                    self.player.health = max(0.0, self.player.health - 5.0)
+                    self.npc_damage_cooldowns[entity.id] = current_time
+                    
+                    # Check if player is dead
+                    if self.player.health <= 0.0:
+                        self.game_state = GameState.GAME_OVER
+                    
+                    # Update player entity in the entities list
+                    for i, e in enumerate(self.entities):
+                        if e.id == 'player':
+                            updated_player = GameEntity(
+                                id=self.player.id,
+                                position=self.player.position,
+                                velocity=self.player.velocity,
+                                health=self.player.health,
+                                description=self.player.description,
+                                properties=self.player.properties,
+                                height=getattr(self.player, 'height', PLAYER_HEIGHT_UNITS)
+                            )
+                            self.entities[i] = updated_player
+                            self.player = updated_player
+                            break
+    
     def process_frame(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a single game frame through the complete circuit
@@ -1078,6 +1212,10 @@ class KopisEngine:
         # Store player position for collision detection
         if self.player:
             self.last_player_pos = self.player.position
+        
+        # Check for player-NPC collisions and apply damage
+        if self.player:
+            self._check_npc_collisions(delta_time)
         
         # === NAND GATE (Logical Operations) ===
         nand_result = self.nand_gate.evaluate(parallel_signals, {
@@ -1285,6 +1423,16 @@ class MazeChunk:
         self.cell_size = cell_size
         self.walls = set()  # Set of (local_x, local_y) tuples
         self.paths = set()
+        # Floor and ceiling heights per cell (z values in world space)
+        # Default: floor_z = 0, ceiling_z = STORY_HEIGHT_UNITS for each level (10 feet = 300 units)
+        self.floor_heights = {}  # (local_x, local_y) -> floor_z (default: level * STORY_HEIGHT_UNITS)
+        self.ceiling_heights = {}  # (local_x, local_y) -> ceiling_z (default: (level + 1) * STORY_HEIGHT_UNITS)
+        # Stairs: (local_x, local_y) -> {'direction': 'up' or 'down', 'target_level': int}
+        self.stairs = {}  # (local_x, local_y) -> {'direction': 'up'|'down', 'target_level': int}
+        # Holes: (local_x, local_y) -> True (floor hole) or 'ceiling' (ceiling hole)
+        self.holes = {}  # (local_x, local_y) -> 'floor' or 'ceiling' or None
+        # Windows: set of (local_x, local_y, 'north'|'south'|'east'|'west') tuples
+        self.windows = set()  # Set of (local_x, local_y, wall_direction) tuples
         self.connection_points = self._get_connection_points()
         if adjacent_chunks is None:
             adjacent_chunks = {}
@@ -1488,6 +1636,68 @@ class MazeChunk:
                     self.walls.add((x, y))
                 else:
                     self.paths.add((x, y))
+        
+        # Generate stairs, holes, and windows after maze is created
+        self._generate_stairs_holes_windows(rng)
+    
+    def _generate_stairs_holes_windows(self, rng):
+        """Generate stairs, holes in floors/ceilings, and windows in walls"""
+        width = self.chunk_size
+        height = self.chunk_size
+        
+        # Generate stairs (10-15% of path cells) - increased frequency
+        path_list = list(self.paths)
+        num_stairs = max(1, int(len(path_list) * rng.uniform(0.10, 0.15)))
+        stairs_cells = rng.sample(path_list, min(num_stairs, len(path_list)))
+        
+        for x, y in stairs_cells:
+            # Randomly choose up or down stairs (each direction has equal probability)
+            direction = rng.choice(['up', 'down'])
+            # Target level: up goes to +1 level, down goes to -1 level
+            # Stairs indicate direction, actual level change happens during physics/rendering
+            self.stairs[(x, y)] = {
+                'direction': direction,
+                'target_level': 1 if direction == 'up' else -1
+            }
+        
+        # Generate holes in floors (5-10% of path cells, but not in stairs) - increased frequency
+        path_list_no_stairs = [p for p in path_list if p not in stairs_cells]
+        num_floor_holes = max(0, int(len(path_list_no_stairs) * rng.uniform(0.05, 0.10)))
+        floor_hole_cells = rng.sample(path_list_no_stairs, min(num_floor_holes, len(path_list_no_stairs)))
+        for x, y in floor_hole_cells:
+            self.holes[(x, y)] = 'floor'
+        
+        # Generate holes in ceilings (4-8% of path cells, but not in stairs or floor holes) - increased frequency
+        path_list_no_holes = [p for p in path_list_no_stairs if p not in floor_hole_cells]
+        num_ceiling_holes = max(0, int(len(path_list_no_holes) * rng.uniform(0.04, 0.08)))
+        ceiling_hole_cells = rng.sample(path_list_no_holes, min(num_ceiling_holes, len(path_list_no_holes)))
+        for x, y in ceiling_hole_cells:
+            self.holes[(x, y)] = 'ceiling'
+        
+        # Generate windows in walls (10-20% of wall cells that border paths)
+        wall_list = list(self.walls)
+        windows_candidates = []
+        for x, y in wall_list:
+            # Check if this wall is adjacent to a path (so window makes sense)
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                nx, ny = x + dx, y + dy
+                if (nx, ny) in self.paths:
+                    # Determine which wall face should have the window
+                    if dx == 1:  # Path to the east, window on east wall
+                        windows_candidates.append((x, y, 'east'))
+                    elif dx == -1:  # Path to the west, window on west wall
+                        windows_candidates.append((x, y, 'west'))
+                    elif dy == 1:  # Path to the south, window on south wall
+                        windows_candidates.append((x, y, 'south'))
+                    elif dy == -1:  # Path to the north, window on north wall
+                        windows_candidates.append((x, y, 'north'))
+                    break  # Only one window per wall cell
+        
+        # Randomly select windows from candidates
+        num_windows = max(1, int(len(windows_candidates) * rng.uniform(0.10, 0.20)))
+        selected_windows = rng.sample(windows_candidates, min(num_windows, len(windows_candidates)))
+        for window_info in selected_windows:
+            self.windows.add(window_info)
     
     def get_world_cell(self, local_x: int, local_y: int) -> Tuple[int, int]:
         """Convert local chunk coordinates to world cell coordinates"""
@@ -2332,8 +2542,8 @@ class PygameRenderer:
                 
                 FOV = 60.0  # Field of view in degrees
                 MAX_DEPTH = 1000.0  # Maximum ray distance
-                CEILING_LEVEL = 300.0  # Ceiling height
-                CAMERA_HEIGHT_OFFSET = 150.0  # Eye level
+                CEILING_LEVEL = STORY_HEIGHT_UNITS  # Ceiling height (10 feet = 300 units)
+                CAMERA_HEIGHT_OFFSET = PLAYER_HEIGHT_UNITS * 0.833  # Eye level (5 feet = 150 units, ~83% of 6 feet)
                 
                 # Extract camera position
                 if len(camera_pos) == 3:
@@ -2351,16 +2561,22 @@ class PygameRenderer:
                 right_x = math.cos(yaw_rad)
                 right_y = math.sin(yaw_rad)
                 
-                # Draw floor and ceiling first (Doom-style)
+                # Draw floor and ceiling per column (to support stairs and variable heights)
+                # We'll draw them per-column during raycasting to handle stairs properly
                 half_height = self.height / 2
                 horizon_y = half_height - math.tan(pitch_rad) * (self.height / 2)
                 
-                # Ceiling
+                # Calculate current level based on camera Z (each level is 10 feet = 300 units)
+                current_level = int(cam_z / STORY_HEIGHT_UNITS)
+                level_floor_z = current_level * STORY_HEIGHT_UNITS
+                level_ceiling_z = (current_level + 1) * STORY_HEIGHT_UNITS
+                
+                # Basic ceiling (default, will be modified per-column for stairs)
                 ceiling_top = 0
                 ceiling_bottom = max(0, int(horizon_y))
                 pygame.draw.rect(self.screen, (26, 26, 26), (0, ceiling_top, self.width, ceiling_bottom - ceiling_top))
                 
-                # Floor
+                # Basic floor (default, will be modified per-column for stairs)
                 floor_top = min(self.height, int(horizon_y))
                 floor_bottom = self.height
                 pygame.draw.rect(self.screen, (42, 42, 42), (0, floor_top, self.width, floor_bottom - floor_top))
@@ -2463,6 +2679,23 @@ class PygameRenderer:
                         map_x = int((cam_x + ray_dir_x * perp_wall_dist * cell_size) / cell_size)
                         map_y = int((cam_y + ray_dir_y * perp_wall_dist * cell_size) / cell_size)
                         
+                        # Check for window in this wall
+                        chunk_x, chunk_y = self.maze._get_chunk_coords((map_x * cell_size, map_y * cell_size))
+                        chunk = self.maze._get_or_create_chunk(chunk_x, chunk_y)
+                        local_x = ((map_x % self.maze.chunk_size) + self.maze.chunk_size) % self.maze.chunk_size
+                        local_y = ((map_y % self.maze.chunk_size) + self.maze.chunk_size) % self.maze.chunk_size
+                        
+                        # Determine wall direction for window check
+                        # side == 0 means X-side wall, side == 1 means Y-side wall
+                        # Use ray direction to determine which face of the wall we hit
+                        wall_dir = None
+                        if side == 0:  # X-side wall
+                            wall_dir = 'west' if ray_dir_x < 0 else 'east'
+                        else:  # Y-side wall
+                            wall_dir = 'north' if ray_dir_y < 0 else 'south'
+                        
+                        has_window = (local_x, local_y, wall_dir) in chunk.windows
+                        
                         # Generate deterministic color
                         seed = hash(f"{map_x}_{map_y}") % 1000000
                         rng = (seed * 9301 + 49297) % 233280 / 233280
@@ -2477,9 +2710,74 @@ class PygameRenderer:
                         
                         # Draw wall column (wider if skipping columns for performance)
                         wall_width = raycast_skip
-                        pygame.draw.rect(self.screen, (wall_r, wall_g, wall_b),
-                                       (x, max(0, int(draw_start)), wall_width, 
-                                        min(self.height, int(draw_end)) - max(0, int(draw_start))))
+                        wall_height_pixels = min(self.height, int(draw_end)) - max(0, int(draw_start))
+                        
+                        if has_window:
+                            # Draw window: lighter section in middle of wall
+                            window_start_ratio = 0.35  # Window starts at 35% up the wall
+                            window_end_ratio = 0.65    # Window ends at 65% up the wall
+                            window_start_screen = draw_start + (draw_end - draw_start) * window_start_ratio
+                            window_end_screen = draw_start + (draw_end - draw_start) * window_end_ratio
+                            
+                            # Draw wall top
+                            if int(draw_start) < int(window_start_screen):
+                                pygame.draw.rect(self.screen, (wall_r, wall_g, wall_b),
+                                               (x, max(0, int(draw_start)), wall_width, 
+                                                int(window_start_screen) - max(0, int(draw_start))))
+                            
+                            # Draw window (lighter, bluish color to simulate sky/outside)
+                            window_r = min(255, int(wall_r * 1.5))
+                            window_g = min(255, int(wall_g * 1.5))
+                            window_b = min(255, int(wall_b * 1.3 + 40))
+                            pygame.draw.rect(self.screen, (window_r, window_g, window_b),
+                                           (x, max(0, int(window_start_screen)), wall_width, 
+                                            int(window_end_screen) - max(0, int(window_start_screen))))
+                            
+                            # Draw wall bottom
+                            if int(window_end_screen) < int(draw_end):
+                                pygame.draw.rect(self.screen, (wall_r, wall_g, wall_b),
+                                               (x, max(0, int(window_end_screen)), wall_width, 
+                                                min(self.height, int(draw_end)) - max(0, int(window_end_screen))))
+                        else:
+                            # Draw solid wall
+                            pygame.draw.rect(self.screen, (wall_r, wall_g, wall_b),
+                                           (x, max(0, int(draw_start)), wall_width, wall_height_pixels))
+                        
+                        # Check cell before the wall for stairs and render them
+                        # Go back one step to get the cell before the wall based on ray direction
+                        if side == 0:  # X-side wall
+                            pre_cell_x = map_x - (1 if ray_dir_x > 0 else -1)
+                            pre_cell_y = map_y
+                        else:  # Y-side wall
+                            pre_cell_x = map_x
+                            pre_cell_y = map_y - (1 if ray_dir_y > 0 else -1)
+                        
+                        # Check for stairs in the cell before the wall
+                        chunk_x_pre, chunk_y_pre = self.maze._get_chunk_coords((pre_cell_x * cell_size, pre_cell_y * cell_size))
+                        chunk_pre = self.maze._get_or_create_chunk(chunk_x_pre, chunk_y_pre)
+                        local_x_pre = ((pre_cell_x % self.maze.chunk_size) + self.maze.chunk_size) % self.maze.chunk_size
+                        local_y_pre = ((pre_cell_y % self.maze.chunk_size) + self.maze.chunk_size) % self.maze.chunk_size
+                        
+                        stair_info_pre = chunk_pre.stairs.get((local_x_pre, local_y_pre))
+                        
+                        # If there are stairs, render them as visible steps
+                        if stair_info_pre:
+                            # Calculate stair rendering - draw visible step lines
+                            # Draw darker lines to indicate stair steps
+                            num_steps = 4  # Number of visible steps
+                            step_height = STORY_HEIGHT_UNITS / num_steps  # Height per step
+                            
+                            for step in range(num_steps + 1):
+                                step_z = level_floor_z + (step * step_height) if stair_info_pre['direction'] == 'up' else level_floor_z - (step * step_height)
+                                # Calculate screen y for this step height
+                                step_p = (cam_z - step_z) / (cam_z - level_floor_z) if (cam_z - level_floor_z) != 0 else 1.0
+                                step_screen_y = horizon_y + (self.height - horizon_y) * step_p
+                                
+                                if int(draw_end) <= step_screen_y < self.height:
+                                    # Draw step line (darker color to show depth)
+                                    pygame.draw.line(self.screen, (35, 35, 35),
+                                                   (x, int(step_screen_y)),
+                                                   (x + raycast_skip, int(step_screen_y)), 1)
                         
                         # Store ray result for sprite rendering
                         ray_results.append({
@@ -2652,11 +2950,14 @@ class PygameRenderer:
             for sprite in sprites:
                 entity = sprite['entity']
                 is_player = entity.id == 'player'
-                color = self.BLUE if is_player else (self.RED if 'npc' in entity.id else self.GREEN)
-                base_radius = 15 if is_player else (10 if 'npc' in entity.id else 8)
                 
-                # Calculate sprite size based on distance
-                sprite_size = max(5, min(50, base_radius * 2 * (self.height / sprite['depth'])))
+                # All entities are green squares
+                color = self.GREEN  # Green color for all entities
+                entity_height = getattr(entity, 'height', PLAYER_HEIGHT_UNITS)  # Use entity height (6 feet = 180 units)
+                
+                # Calculate sprite size based on distance and entity height
+                # Size should scale with distance, using entity height as base
+                sprite_size = max(5, min(100, entity_height * (self.height / sprite['depth']) / 2.0))
                 sprite_x = sprite['screen_x'] - sprite_size / 2
                 sprite_y = sprite['screen_y'] - sprite_size / 2
                 
@@ -2675,21 +2976,53 @@ class PygameRenderer:
                 # Brightness based on distance
                 brightness = max(0.5, min(1.0, 1.0 - sprite['distance'] / 500.0))
                 
-                # Draw sprite as circle (Doom-style)
-                alpha = int(255 * brightness)
-                sprite_surface = pygame.Surface((int(sprite_size * 2), int(sprite_size * 2)), pygame.SRCALPHA)
+                # Draw sprite as green cube (3D box)
+                # Calculate cube dimensions (width = depth = height for a cube)
+                cube_width = entity_height / 2.0  # Cube is half the entity height
+                cube_size_screen = max(5, min(100, cube_width * (self.height / sprite['depth']) / 2.0))
                 
-                # Draw glow
-                pygame.draw.circle(sprite_surface, (*color, alpha // 2), 
-                                 (int(sprite_size), int(sprite_size)), int(sprite_size))
+                # Draw cube as isometric-style box (visible faces)
+                # Calculate cube vertices and draw faces
+                center_x = sprite['screen_x']
+                center_y = sprite['screen_y']
                 
-                # Draw sprite body
-                pygame.draw.circle(sprite_surface, (*color, alpha), 
-                                 (int(sprite_size), int(sprite_size)), int(sprite_size // 2))
-                pygame.draw.circle(sprite_surface, (255, 255, 255, alpha), 
-                                 (int(sprite_size), int(sprite_size)), int(sprite_size // 2), 2)
+                # Draw top face (darker)
+                top_brightness = brightness * 0.7
+                top_color = tuple(int(c * top_brightness) for c in color[:3])
+                # Top face vertices (shifted up and back)
+                top_offset = cube_size_screen * 0.3
+                top_points = [
+                    (center_x - cube_size_screen/2 - top_offset, center_y - cube_size_screen/2 - top_offset),
+                    (center_x + cube_size_screen/2 - top_offset, center_y - cube_size_screen/2 - top_offset),
+                    (center_x + cube_size_screen/2 + top_offset, center_y - cube_size_screen/2 + top_offset),
+                    (center_x - cube_size_screen/2 + top_offset, center_y - cube_size_screen/2 + top_offset)
+                ]
+                pygame.draw.polygon(self.screen, top_color, top_points)
                 
-                self.screen.blit(sprite_surface, (int(sprite_x), int(sprite_y)))
+                # Draw front face (brighter)
+                front_points = [
+                    (center_x - cube_size_screen/2, center_y - cube_size_screen/2),
+                    (center_x + cube_size_screen/2, center_y - cube_size_screen/2),
+                    (center_x + cube_size_screen/2, center_y + cube_size_screen/2),
+                    (center_x - cube_size_screen/2, center_y + cube_size_screen/2)
+                ]
+                pygame.draw.polygon(self.screen, color, front_points)
+                pygame.draw.polygon(self.screen, (255, 255, 255), front_points, 2)
+                
+                # Draw right face (medium brightness)
+                right_brightness = brightness * 0.85
+                right_color = tuple(int(c * right_brightness) for c in color[:3])
+                right_points = [
+                    (center_x + cube_size_screen/2, center_y - cube_size_screen/2),
+                    (center_x + cube_size_screen/2 + top_offset*2, center_y - cube_size_screen/2 + top_offset*2),
+                    (center_x + cube_size_screen/2 + top_offset*2, center_y + cube_size_screen/2 + top_offset*2),
+                    (center_x + cube_size_screen/2, center_y + cube_size_screen/2)
+                ]
+                pygame.draw.polygon(self.screen, right_color, right_points)
+                
+                # Draw edges
+                pygame.draw.lines(self.screen, (255, 255, 255), True, top_points, 1)
+                pygame.draw.lines(self.screen, (255, 255, 255), True, right_points, 1)
         else:
             # 2D fallback rendering
             sorted_entities = sorted(entities, key=lambda e: e.position[2] if len(e.position) == 3 else 0.0)
@@ -2698,15 +3031,10 @@ class PygameRenderer:
                 screen_pos = self.world_to_screen(entity.position, camera_pos, camera_yaw, camera_pitch, camera_roll, fpv_mode)
                 
                 if 0 <= screen_pos[0] <= self.width and 0 <= screen_pos[1] <= self.height:
-                    if entity.id == 'player':
-                        color = self.BLUE
-                        base_radius = 15
-                    elif 'npc' in entity.id:
-                        color = self.RED
-                        base_radius = 10
-                    else:
-                        color = self.GREEN
-                        base_radius = 8
+                    # All entities are green squares
+                    color = self.GREEN
+                    entity_height = getattr(entity, 'height', PLAYER_HEIGHT_UNITS)  # Use entity height (6 feet = 180 units)
+                    base_size = entity_height / 6.0  # Scale based on height
                     
                     if len(entity.position) == 3:
                         ez = entity.position[2]
@@ -2718,10 +3046,51 @@ class PygameRenderer:
                         cz = 0.0
                     rel_z = ez - cz
                     perspective_scale = 1.0 / (1.0 + abs(rel_z) * 0.001)
-                    radius = int(base_radius * perspective_scale)
+                    size = int(base_size * perspective_scale)
+                    half_size = size // 2
                     
-                    pygame.draw.circle(self.screen, color, screen_pos, radius)
-                    pygame.draw.circle(self.screen, self.WHITE, screen_pos, radius, 2)
+                    # Draw green cube (3D box)
+                    center_x = screen_pos[0]
+                    center_y = screen_pos[1]
+                    cube_width = entity_height / 6.0  # Cube size
+                    cube_size = int(cube_width * perspective_scale)
+                    cube_offset = int(cube_size * 0.3)  # Offset for isometric effect
+                    
+                    # Draw top face (darker)
+                    top_brightness = 0.7
+                    top_color = tuple(int(c * top_brightness) for c in color[:3])
+                    top_points = [
+                        (center_x - cube_size//2 - cube_offset, center_y - cube_size//2 - cube_offset),
+                        (center_x + cube_size//2 - cube_offset, center_y - cube_size//2 - cube_offset),
+                        (center_x + cube_size//2 + cube_offset, center_y - cube_size//2 + cube_offset),
+                        (center_x - cube_size//2 + cube_offset, center_y - cube_size//2 + cube_offset)
+                    ]
+                    pygame.draw.polygon(self.screen, top_color, top_points)
+                    
+                    # Draw front face (brighter)
+                    front_points = [
+                        (center_x - cube_size//2, center_y - cube_size//2),
+                        (center_x + cube_size//2, center_y - cube_size//2),
+                        (center_x + cube_size//2, center_y + cube_size//2),
+                        (center_x - cube_size//2, center_y + cube_size//2)
+                    ]
+                    pygame.draw.polygon(self.screen, color, front_points)
+                    pygame.draw.polygon(self.screen, self.WHITE, front_points, 2)
+                    
+                    # Draw right face (medium brightness)
+                    right_brightness = 0.85
+                    right_color = tuple(int(c * right_brightness) for c in color[:3])
+                    right_points = [
+                        (center_x + cube_size//2, center_y - cube_size//2),
+                        (center_x + cube_size//2 + cube_offset*2, center_y - cube_size//2 + cube_offset*2),
+                        (center_x + cube_size//2 + cube_offset*2, center_y + cube_size//2 + cube_offset*2),
+                        (center_x + cube_size//2, center_y + cube_size//2)
+                    ]
+                    pygame.draw.polygon(self.screen, right_color, right_points)
+                    
+                    # Draw edges
+                    pygame.draw.lines(self.screen, self.WHITE, True, top_points, 1)
+                    pygame.draw.lines(self.screen, self.WHITE, True, right_points, 1)
         
         # Draw UI overlay
         self._draw_ui(camera_pos, frame_count, fps, len(entities), camera_yaw, camera_pitch, fpv_mode)
@@ -2987,8 +3356,184 @@ def main():
         
         return True
     
+    def show_new_game_screen():
+        """Display new game screen after epilepsy warning"""
+        new_game_screen = renderer.screen
+        clock = pygame.time.Clock()
+        
+        # Colors
+        GREEN = (68, 255, 68)
+        DARK_GREEN = (0, 204, 0)
+        WHITE = (255, 255, 255)
+        DARK_BG = (26, 46, 26)
+        
+        # Create fonts
+        try:
+            title_font = pygame.font.Font(None, 72)
+            text_font = pygame.font.Font(None, 36)
+            button_font = pygame.font.Font(None, 48)
+        except:
+            title_font = pygame.font.SysFont('arial', 72, bold=True)
+            text_font = pygame.font.SysFont('arial', 36)
+            button_font = pygame.font.SysFont('arial', 48, bold=True)
+        
+        acknowledged = False
+        
+        while not acknowledged:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                        acknowledged = True
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    acknowledged = True
+            
+            # Clear screen with dark background
+            new_game_screen.fill(DARK_BG)
+            
+            # Draw border
+            pygame.draw.rect(new_game_screen, GREEN, (50, 50, renderer.width - 100, renderer.height - 100), 5)
+            
+            # Title
+            title_text = title_font.render("NEW GAME", True, GREEN)
+            title_rect = title_text.get_rect(center=(renderer.width // 2, 250))
+            new_game_screen.blit(title_text, title_rect)
+            
+            # Message
+            message_lines = [
+                "Welcome to Kopis Engine!",
+                "",
+                "Navigate the infinite maze.",
+                "Avoid NPCs or you'll take damage!",
+                "",
+                "Use WASD to move, Space to jump,",
+                "and Mouse to look around."
+            ]
+            
+            y_offset = 350
+            for line in message_lines:
+                if line:  # Skip empty lines
+                    text = text_font.render(line, True, WHITE)
+                    text_rect = text.get_rect(center=(renderer.width // 2, y_offset))
+                    new_game_screen.blit(text, text_rect)
+                y_offset += 45
+            
+            # Button
+            button_text = button_font.render("Press ENTER, SPACE, or CLICK to Start", True, WHITE)
+            button_rect = button_text.get_rect(center=(renderer.width // 2, renderer.height - 150))
+            
+            # Draw button background
+            button_bg_rect = pygame.Rect(button_rect.x - 20, button_rect.y - 10, 
+                                        button_rect.width + 40, button_rect.height + 20)
+            pygame.draw.rect(new_game_screen, DARK_GREEN, button_bg_rect)
+            pygame.draw.rect(new_game_screen, GREEN, button_bg_rect, 3)
+            new_game_screen.blit(button_text, button_rect)
+            
+            pygame.display.flip()
+            clock.tick(60)
+        
+        return True
+    
+    def show_game_over_screen():
+        """Display game over screen with new game option"""
+        game_over_screen = renderer.screen
+        clock = pygame.time.Clock()
+        
+        # Colors
+        RED = (255, 68, 68)
+        DARK_RED = (204, 0, 0)
+        WHITE = (255, 255, 255)
+        BLACK = (0, 0, 0)
+        DARK_BG = (46, 26, 26)
+        GREEN = (68, 255, 68)
+        DARK_GREEN = (0, 204, 0)
+        
+        # Create fonts
+        try:
+            title_font = pygame.font.Font(None, 72)
+            text_font = pygame.font.Font(None, 36)
+            button_font = pygame.font.Font(None, 48)
+        except:
+            title_font = pygame.font.SysFont('arial', 72, bold=True)
+            text_font = pygame.font.SysFont('arial', 36)
+            button_font = pygame.font.SysFont('arial', 48, bold=True)
+        
+        choice = None  # None = waiting, True = new game, False = quit
+        
+        while choice is None:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                        choice = True  # New game
+                    if event.key == pygame.K_ESCAPE:
+                        choice = False  # Quit
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    # Check which button was clicked
+                    mouse_pos = pygame.mouse.get_pos()
+                    new_game_rect = pygame.Rect(renderer.width // 2 - 200, renderer.height - 200, 400, 60)
+                    quit_rect = pygame.Rect(renderer.width // 2 - 200, renderer.height - 120, 400, 60)
+                    if new_game_rect.collidepoint(mouse_pos):
+                        choice = True
+                    elif quit_rect.collidepoint(mouse_pos):
+                        choice = False
+            
+            # Clear screen with dark background
+            game_over_screen.fill(DARK_BG)
+            
+            # Draw border
+            pygame.draw.rect(game_over_screen, RED, (50, 50, renderer.width - 100, renderer.height - 100), 5)
+            
+            # Title
+            title_text = title_font.render("GAME OVER", True, RED)
+            title_rect = title_text.get_rect(center=(renderer.width // 2, 200))
+            game_over_screen.blit(title_text, title_rect)
+            
+            # Message
+            message_lines = [
+                "Your health has reached zero!",
+                "",
+                "The maze has claimed another victim."
+            ]
+            
+            y_offset = 300
+            for line in message_lines:
+                if line:  # Skip empty lines
+                    text = text_font.render(line, True, WHITE)
+                    text_rect = text.get_rect(center=(renderer.width // 2, y_offset))
+                    game_over_screen.blit(text, text_rect)
+                y_offset += 45
+            
+            # New Game button
+            new_game_text = button_font.render("NEW GAME (ENTER/SPACE)", True, WHITE)
+            new_game_rect = pygame.Rect(renderer.width // 2 - 200, renderer.height - 200, 400, 60)
+            pygame.draw.rect(game_over_screen, DARK_GREEN, new_game_rect)
+            pygame.draw.rect(game_over_screen, GREEN, new_game_rect, 3)
+            new_game_text_rect = new_game_text.get_rect(center=new_game_rect.center)
+            game_over_screen.blit(new_game_text, new_game_text_rect)
+            
+            # Quit button
+            quit_text = button_font.render("QUIT (ESC)", True, WHITE)
+            quit_rect = pygame.Rect(renderer.width // 2 - 200, renderer.height - 120, 400, 60)
+            pygame.draw.rect(game_over_screen, DARK_RED, quit_rect)
+            pygame.draw.rect(game_over_screen, RED, quit_rect, 3)
+            quit_text_rect = quit_text.get_rect(center=quit_rect.center)
+            game_over_screen.blit(quit_text, quit_text_rect)
+            
+            pygame.display.flip()
+            clock.tick(60)
+        
+        return choice
+    
     # Show warning and check if user wants to continue
     if not show_epilepsy_warning():
+        print("Game cancelled by user")
+        return
+    
+    # Show new game screen
+    if not show_new_game_screen():
         print("Game cancelled by user")
         return
     
@@ -3277,6 +3822,36 @@ def main():
             result = engine.process_frame(input_data)
             frame += 1
             fps_counter += 1
+            
+            # Check for game over state after processing frame
+            if engine.game_state == GameState.GAME_OVER:
+                # Show game over screen
+                new_game_choice = show_game_over_screen()
+                if new_game_choice:
+                    # Restart game - reset player health and state
+                    if engine.player:
+                        # Update player entity with full health
+                        for i, e in enumerate(engine.entities):
+                            if e.id == 'player':
+                                updated_player = GameEntity(
+                                    id=engine.player.id,
+                                    position=engine.player.position,
+                                    velocity=engine.player.velocity,
+                                    health=100.0,  # Reset health
+                                    description=engine.player.description,
+                                    properties=engine.player.properties,
+                                    height=getattr(engine.player, 'height', PLAYER_HEIGHT_UNITS)
+                                )
+                                engine.entities[i] = updated_player
+                                engine.player = updated_player
+                                break
+                        engine.game_state = GameState.PLAYING
+                        engine.npc_damage_cooldowns = {}  # Reset damage cooldowns
+                    continue
+                else:
+                    # Quit game
+                    running = False
+                    break
             
             # Calculate FPS more accurately
             now = time.time()

@@ -248,6 +248,150 @@
         .epilepsy-warning-button:active {
             transform: scale(0.98);
         }
+
+        /* New Game Screen */
+        .new-game-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            backdrop-filter: blur(10px);
+        }
+
+        .new-game-screen.hidden {
+            display: none;
+        }
+
+        .new-game-content {
+            background: linear-gradient(135deg, #1a2e1a 0%, #162e16 100%);
+            border: 3px solid #44ff44;
+            border-radius: 15px;
+            padding: 40px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 0 50px rgba(68, 255, 68, 0.5);
+        }
+
+        .new-game-content h2 {
+            color: #44ff44;
+            font-size: 32px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .new-game-content p {
+            color: #fff;
+            font-size: 18px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .new-game-button {
+            background: linear-gradient(135deg, #44ff44, #00cc00);
+            color: #000;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .new-game-button:hover {
+            background: linear-gradient(135deg, #66ff66, #00ff00);
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(68, 255, 68, 0.7);
+        }
+
+        /* Game Over Screen */
+        .game-over-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10001;
+            backdrop-filter: blur(10px);
+        }
+
+        .game-over-screen.hidden {
+            display: none;
+        }
+
+        .game-over-content {
+            background: linear-gradient(135deg, #2e1a1a 0%, #2e1616 100%);
+            border: 3px solid #ff4444;
+            border-radius: 15px;
+            padding: 40px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 0 50px rgba(255, 68, 68, 0.5);
+        }
+
+        .game-over-content h2 {
+            color: #ff4444;
+            font-size: 32px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .game-over-content p {
+            color: #fff;
+            font-size: 18px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .game-over-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .game-over-button {
+            background: linear-gradient(135deg, #44ff44, #00cc00);
+            color: #000;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            width: 300px;
+        }
+
+        .game-over-button.quit {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: #fff;
+        }
+
+        .game-over-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(68, 255, 68, 0.7);
+        }
+
+        .game-over-button.quit:hover {
+            box-shadow: 0 0 20px rgba(255, 68, 68, 0.7);
+        }
     </style>
     <!-- Pyodide -->
     <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
@@ -272,6 +416,48 @@
         </div>
     </div>
 
+    <!-- New Game Screen -->
+    <div class="new-game-screen" id="newGameScreen">
+        <div class="new-game-content">
+            <h2>NEW GAME</h2>
+            <p>
+                Welcome to Kopis Engine!
+            </p>
+            <p>
+                Navigate the infinite maze.<br>
+                Avoid NPCs or you'll take damage!
+            </p>
+            <p style="font-size: 16px;">
+                Use WASD to move, Space to jump,<br>
+                and Mouse to look around.
+            </p>
+            <button class="new-game-button" id="startGameButton">
+                Press ENTER, SPACE, or CLICK to Start
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div class="game-over-screen hidden" id="gameOverScreen">
+        <div class="game-over-content">
+            <h2>GAME OVER</h2>
+            <p>
+                Your health has reached zero!
+            </p>
+            <p>
+                The maze has claimed another victim.
+            </p>
+            <div class="game-over-buttons">
+                <button class="game-over-button" id="newGameButton">
+                    NEW GAME (ENTER/SPACE)
+                </button>
+                <button class="game-over-button quit" id="quitGameButton">
+                    QUIT (ESC)
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="header">
         <div class="title">Kopis Engine - Python Web Edition</div>
         <div>Powered by Pyodide</div>
@@ -291,6 +477,7 @@
         <div class="stats" id="stats">
             <div>FPS: <span id="fps">0</span></div>
             <div>Frame: <span id="frame">0</span></div>
+            <div>Health: <span id="health">100</span></div>
             <div>Python: <span id="pythonStatus">Ready</span></div>
         </div>
         <div class="controls">
@@ -425,7 +612,7 @@ import math
 import random
 
 # Create maze
-maze = Maze(chunk_size=20, cell_size=30.0, load_radius=3)
+maze = Maze(chunk_size=20, cell_size=50.0, load_radius=3)
 
 # Create renderer (uses JavaScript Canvas API)
 renderer = BrowserRenderer(width=1280, height=720, maze=maze)
@@ -456,7 +643,8 @@ player = GameEntity(
         'affected_by_gravity': True,
         'radius': 12.0,
         'on_ground': True
-    }
+    },
+    height=PLAYER_HEIGHT_UNITS  # 6 feet = 180 units
 )
 engine.add_entity(player)
 
@@ -469,7 +657,8 @@ for i in range(5):
         position=(start_world[0] + math.cos(angle) * dist, start_world[1] + math.sin(angle) * dist, 0.0),
         velocity=(0.0, 0.0, 0.0),
         health=50.0,
-        properties={'radius': 8.0}
+        properties={'radius': 8.0},
+        height=PLAYER_HEIGHT_UNITS  # 6 feet = 180 units
     )
     engine.add_entity(npc)
 
@@ -491,7 +680,7 @@ import math
 import random
 
 # Create simplified maze
-maze = SimpleMaze(chunk_size=20, cell_size=30.0, load_radius=3)
+maze = SimpleMaze(chunk_size=20, cell_size=50.0, load_radius=3)
 
 # Create simplified engine first
 engine = SimpleEngine()
@@ -505,7 +694,8 @@ player = GameEntity(
     position=(0.0, 0.0, 0.0),
     velocity=(0.0, 0.0, 0.0),
     health=100.0,
-    description="Player character"
+    description="Player character",
+    height=PLAYER_HEIGHT_UNITS  # 6 feet = 180 units
 )
 engine.add_entity(player)
 
@@ -517,7 +707,8 @@ for i in range(5):
         id='npc_' + str(i),
         position=(math.cos(angle) * dist, math.sin(angle) * dist, 0.0),
         velocity=(0.0, 0.0, 0.0),
-        health=50.0
+        health=50.0,
+        height=PLAYER_HEIGHT_UNITS  # 6 feet = 180 units
     )
     engine.add_entity(npc)
 
@@ -628,6 +819,21 @@ js.gameState = {
                 // Also handle standalone transformers import if it exists
                 pythonCode = pythonCode.replace(/^import transformers$/m, 'try:\n    import transformers\nexcept:\n    transformers = None');
                 
+                // Make sure constants are defined before BrowserRenderer (if not already present)
+                if (pythonCode.indexOf('FEET_TO_UNITS') === -1) {
+                    // Find where to insert constants (before first class definition or after imports)
+                    const firstClassMatch = pythonCode.match(/\nclass \w+:/);
+                    if (firstClassMatch) {
+                        const insertPos = firstClassMatch.index;
+                        pythonCode = pythonCode.substring(0, insertPos) + `
+# Constants for height measurements
+FEET_TO_UNITS = 30.0  # 1 foot = 30 units
+STORY_HEIGHT_UNITS = 10.0 * FEET_TO_UNITS  # 10 feet = 300 units
+PLAYER_HEIGHT_UNITS = 6.0 * FEET_TO_UNITS  # 6 feet = 180 units
+` + pythonCode.substring(insertPos);
+                    }
+                }
+                
                 // Replace PygameRenderer class with BrowserRenderer
                 // Find the PygameRenderer class and replace it
                 const pygameRendererStart = pythonCode.indexOf('class PygameRenderer:');
@@ -712,7 +918,9 @@ class BrowserRenderer:
             # Doom-style raycasting (simplified for browser)
             FOV = 60.0
             MAX_DEPTH = 1000.0
-            
+            CEILING_LEVEL = STORY_HEIGHT_UNITS  # Ceiling height (10 feet = 300 units)
+            CAMERA_HEIGHT_OFFSET = PLAYER_HEIGHT_UNITS * 0.833  # Eye level (5 feet = 150 units)
+
             yaw_rad = math.radians(camera_yaw)
             pitch_rad = math.radians(camera_pitch)
             forward_x = math.sin(yaw_rad)
@@ -723,6 +931,11 @@ class BrowserRenderer:
             # Draw floor and ceiling
             half_height = self.height / 2
             horizon_y = half_height - math.tan(pitch_rad) * (self.height / 2)
+            
+            # Calculate current level based on camera Z (each level is 10 feet = 300 units)
+            current_level = int(cam_z / STORY_HEIGHT_UNITS)
+            level_floor_z = current_level * STORY_HEIGHT_UNITS
+            level_ceiling_z = (current_level + 1) * STORY_HEIGHT_UNITS
             
             # Ceiling
             ceiling_bottom = max(0, int(horizon_y))
@@ -754,7 +967,7 @@ class BrowserRenderer:
                     
                     self.draw_line(x, max(0, int(draw_start)), x, min(self.height, int(draw_end)), (wall_r, wall_g, wall_b))
         
-        # Draw entities as sprites (simplified)
+        # Draw entities as green cubes (simplified - just draw rectangles for now in simplified mode)
         sorted_entities = sorted(entities, key=lambda e: e.position[2] if len(e.position) == 3 else 0.0, reverse=True)
         for entity in sorted_entities:
             if len(entity.position) >= 2:
@@ -767,17 +980,17 @@ class BrowserRenderer:
                 screen_y = self.height / 2 + (dy * 2)
                 
                 if 0 <= screen_x < self.width and 0 <= screen_y < self.height:
-                    if entity.id == 'player':
-                        color = self.BLUE
-                        size = 10
-                    else:
-                        color = self.RED
-                        size = 8
+                    # All entities are green squares (simplified rendering)
+                    color = self.GREEN
+                    entity_height = getattr(entity, 'height', PLAYER_HEIGHT_UNITS)
+                    size = int(entity_height / 18.0)  # Scale for display
                     
-                    self.ctx.fillStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
-                    self.ctx.beginPath()
-                    self.ctx.arc(int(screen_x), int(screen_y), size, 0, 2 * math.pi)
-                    self.ctx.fill()
+                    # Draw as green square (simplified cube)
+                    self.draw_rect(int(screen_x - size/2), int(screen_y - size/2), size, size, color)
+                    self.draw_line(int(screen_x - size/2), int(screen_y - size/2), int(screen_x + size/2), int(screen_y - size/2), self.WHITE)
+                    self.draw_line(int(screen_x + size/2), int(screen_y - size/2), int(screen_x + size/2), int(screen_y + size/2), self.WHITE)
+                    self.draw_line(int(screen_x + size/2), int(screen_y + size/2), int(screen_x - size/2), int(screen_y + size/2), self.WHITE)
+                    self.draw_line(int(screen_x - size/2), int(screen_y + size/2), int(screen_x - size/2), int(screen_y - size/2), self.WHITE)
     
     def _raycast_wall(self, cam_x, cam_y, ray_dir_x, ray_dir_y, max_depth):
         """DDA raycast algorithm (Doom-style) - proper 3D raycasting"""
@@ -893,6 +1106,11 @@ import time
 import math
 import random
 
+# Constants for height measurements
+FEET_TO_UNITS = 30.0  # 1 foot = 30 units
+STORY_HEIGHT_UNITS = 10.0 * FEET_TO_UNITS  # 10 feet = 300 units
+PLAYER_HEIGHT_UNITS = 6.0 * FEET_TO_UNITS  # 6 feet = 180 units
+
 class GameState(Enum):
     MENU = "menu"
     PLAYING = "playing"
@@ -957,13 +1175,14 @@ class GameOfLife:
 
 # Simple entity class (not using dataclass for better Pyodide compatibility)
 class GameEntity:
-    def __init__(self, id, position=None, velocity=None, health=100.0, description="", properties=None):
+    def __init__(self, id, position=None, velocity=None, health=100.0, description="", properties=None, height=None):
         self.id = id
         self.position = position if position is not None else (0.0, 0.0, 0.0)
         self.velocity = velocity if velocity is not None else (0.0, 0.0, 0.0)
         self.health = health
         self.description = description
         self.properties = properties if properties is not None else {}
+        self.height = height if height is not None else PLAYER_HEIGHT_UNITS  # Default 6 feet = 180 units
 
 # Simplified Maze class for browser (fallback)
 class SimpleMazeChunk:
@@ -1124,14 +1343,60 @@ class SimpleEngine:
         self.camera_pitch = 0.0
         self.camera_roll = 0.0
         self.fpv_mode = True  # Enable 3D FPV mode by default
+        self.game_state = GameState.PLAYING
+        self.npc_damage_cooldowns = {}  # Track damage cooldowns per NPC
         
     def add_entity(self, entity):
         self.entities.append(entity)
         if entity.id == 'player':
             self.player = entity
     
+    def _check_npc_collisions(self, delta_time):
+        """Check if player is touching any NPCs and apply damage with cooldown"""
+        if not self.player:
+            return
+        
+        import time
+        current_time = time.time()
+        player_pos = self.player.position
+        player_radius = self.player.properties.get('radius', 12.0) if hasattr(self.player, 'properties') else 12.0
+        
+        for entity in self.entities:
+            # Only check NPCs
+            if entity.id == 'player' or 'npc' not in entity.id:
+                continue
+            
+            npc_pos = entity.position
+            npc_radius = entity.properties.get('radius', 8.0) if hasattr(entity, 'properties') else 8.0
+            
+            # Calculate 3D distance
+            dx = player_pos[0] - npc_pos[0]
+            dy = player_pos[1] - npc_pos[1]
+            dz = player_pos[2] - npc_pos[2] if len(player_pos) == 3 and len(npc_pos) == 3 else 0.0
+            distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+            
+            # Check if touching (combined radii)
+            combined_radius = player_radius + npc_radius
+            if distance < combined_radius:
+                # Check cooldown (0.5 seconds per NPC)
+                last_damage_time = self.npc_damage_cooldowns.get(entity.id, 0)
+                cooldown_duration = 0.5  # 0.5 seconds
+                
+                if current_time - last_damage_time >= cooldown_duration:
+                    # Apply damage
+                    self.player.health = max(0.0, self.player.health - 5.0)
+                    self.npc_damage_cooldowns[entity.id] = current_time
+                    
+                    # Check if player is dead
+                    if self.player.health <= 0.0:
+                        self.game_state = GameState.GAME_OVER
+    
     def process_frame(self, input_data):
         self.frame_count += 1
+        delta_time = 0.016  # Assume 60 FPS
+        
+        # Check NPC collisions
+        self._check_npc_collisions(delta_time)
         
         # Safely extract keys and mouse, handle both dict and object types
         try:
@@ -1231,6 +1496,31 @@ class BrowserRenderer:
         self.ctx.arc(int(x), int(y), int(radius), 0, 2 * math.pi)
         self.ctx.fill()
     
+    def draw_polygon(self, points, color):
+        """Draw filled polygon"""
+        if len(points) < 3:
+            return
+        self.ctx.fillStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+        self.ctx.beginPath()
+        self.ctx.moveTo(int(points[0][0]), int(points[0][1]))
+        for i in range(1, len(points)):
+            self.ctx.lineTo(int(points[i][0]), int(points[i][1]))
+        self.ctx.closePath()
+        self.ctx.fill()
+    
+    def draw_polygon_outline(self, points, color, width=1):
+        """Draw polygon outline"""
+        if len(points) < 2:
+            return
+        self.ctx.strokeStyle = 'rgb(' + str(color[0]) + ', ' + str(color[1]) + ', ' + str(color[2]) + ')'
+        self.ctx.lineWidth = width
+        self.ctx.beginPath()
+        self.ctx.moveTo(int(points[0][0]), int(points[0][1]))
+        for i in range(1, len(points)):
+            self.ctx.lineTo(int(points[i][0]), int(points[i][1]))
+        self.ctx.closePath()
+        self.ctx.stroke()
+    
     def render(self, entities, camera_pos, frame_count, fps, camera_yaw=0.0, camera_pitch=0.0, camera_roll=0.0, fpv_mode=False):
         """Render using Canvas API - 3D raycasting like PygameRenderer"""
         import math
@@ -1245,11 +1535,13 @@ class BrowserRenderer:
                 cam_x, cam_y = camera_pos
                 cam_z = 0.0
             
-            # Always use 3D rendering if in FPV mode
+                # Always use 3D rendering if in FPV mode
             if fpv_mode:
                 # Doom-style 3D raycasting
                 FOV = 60.0
                 MAX_DEPTH = 1000.0
+                CEILING_LEVEL = STORY_HEIGHT_UNITS  # Ceiling height (10 feet = 300 units)
+                CAMERA_HEIGHT_OFFSET = PLAYER_HEIGHT_UNITS * 0.833  # Eye level (5 feet = 150 units)
                 
                 yaw_rad = math.radians(camera_yaw)
                 pitch_rad = math.radians(camera_pitch)
@@ -1259,6 +1551,11 @@ class BrowserRenderer:
                 right_y = math.sin(yaw_rad)
                 
                 # Draw floor and ceiling first (Doom-style)
+                # Calculate current level based on camera Z (each level is 10 feet = 300 units)
+                current_level = int(cam_z / STORY_HEIGHT_UNITS)
+                level_floor_z = current_level * STORY_HEIGHT_UNITS
+                level_ceiling_z = (current_level + 1) * STORY_HEIGHT_UNITS
+                
                 half_height = self.height / 2
                 horizon_y = half_height - math.tan(pitch_rad) * (self.height / 2)
                 
@@ -1372,6 +1669,27 @@ class BrowserRenderer:
                             map_x = int((cam_x + ray_dir_x * perp_wall_dist * cell_size) / cell_size)
                             map_y = int((cam_y + ray_dir_y * perp_wall_dist * cell_size) / cell_size)
                             
+                            # Check for window in this wall (if maze has windows)
+                            has_window = False
+                            if hasattr(self, 'maze') and self.maze:
+                                try:
+                                    chunk_x, chunk_y = self.maze._get_chunk_coords((map_x * cell_size, map_y * cell_size))
+                                    chunk = self.maze._get_or_create_chunk(chunk_x, chunk_y)
+                                    local_x = ((map_x % self.maze.chunk_size) + self.maze.chunk_size) % self.maze.chunk_size
+                                    local_y = ((map_y % self.maze.chunk_size) + self.maze.chunk_size) % self.maze.chunk_size
+                                    
+                                    # Determine wall direction
+                                    wall_dir = None
+                                    if side == 0:  # X-side wall
+                                        wall_dir = 'west' if ray_dir_x < 0 else 'east'
+                                    else:  # Y-side wall
+                                        wall_dir = 'north' if ray_dir_y < 0 else 'south'
+                                    
+                                    if hasattr(chunk, 'windows'):
+                                        has_window = (local_x, local_y, wall_dir) in chunk.windows
+                                except:
+                                    pass
+                            
                             # Generate deterministic color
                             seed = hash(str(map_x) + '_' + str(map_y)) % 1000000
                             rng = (seed * 9301 + 49297) % 233280 / 233280
@@ -1389,8 +1707,31 @@ class BrowserRenderer:
                             wall_top = max(0, int(draw_start))
                             wall_bottom = min(self.height, int(draw_end))
                             wall_height = wall_bottom - wall_top
-                            if wall_height > 0:
-                                self.draw_rect(x, wall_top, wall_width, wall_height, (wall_r, wall_g, wall_b))
+                            
+                            if has_window:
+                                # Draw window: lighter section in middle of wall
+                                window_start_ratio = 0.35
+                                window_end_ratio = 0.65
+                                window_start_screen = draw_start + (draw_end - draw_start) * window_start_ratio
+                                window_end_screen = draw_start + (draw_end - draw_start) * window_end_ratio
+                                
+                                # Draw wall top
+                                if int(draw_start) < int(window_start_screen):
+                                    self.draw_rect(x, wall_top, wall_width, int(window_start_screen) - wall_top, (wall_r, wall_g, wall_b))
+                                
+                                # Draw window (lighter, bluish color)
+                                window_r = min(255, int(wall_r * 1.5))
+                                window_g = min(255, int(wall_g * 1.5))
+                                window_b = min(255, int(wall_b * 1.3 + 40))
+                                self.draw_rect(x, int(window_start_screen), wall_width, int(window_end_screen) - int(window_start_screen), (window_r, window_g, window_b))
+                                
+                                # Draw wall bottom
+                                if int(window_end_screen) < int(draw_end):
+                                    self.draw_rect(x, int(window_end_screen), wall_width, wall_bottom - int(window_end_screen), (wall_r, wall_g, wall_b))
+                            else:
+                                # Draw solid wall
+                                if wall_height > 0:
+                                    self.draw_rect(x, wall_top, wall_width, wall_height, (wall_r, wall_g, wall_b))
                             
                             # Render Game of Life blood pattern on close walls
                             if self.shared_game_of_life and distance < 200 and x % (raycast_skip * 2) == 0:
@@ -1485,13 +1826,54 @@ class BrowserRenderer:
                                 sprite_size = max(5, min(40, 300 / max(1, distance_3d)))
                                 
                                 if 0 <= screen_x < self.width and 0 <= screen_y < self.height:
-                                    if entity.id == 'player':
-                                        color = self.BLUE
-                                    else:
-                                        color = self.RED
+                                    # All entities are green cubes
+                                    color = self.GREEN
+                                    entity_height = getattr(entity, 'height', PLAYER_HEIGHT_UNITS)
                                     
-                                    # Draw as circle (billboard sprite)
-                                    self.draw_circle(screen_x, screen_y, int(sprite_size), color)
+                                    # Calculate cube dimensions
+                                    cube_width = entity_height / 2.0  # Cube is half the entity height
+                                    cube_size_screen = max(5, min(100, cube_width * (self.height / depth) / 2.0))
+                                    
+                                    # Draw cube as isometric-style box (visible faces)
+                                    center_x = screen_x
+                                    center_y = screen_y
+                                    
+                                    # Draw top face (darker)
+                                    top_brightness = 0.7
+                                    top_color = (int(color[0] * top_brightness), int(color[1] * top_brightness), int(color[2] * top_brightness))
+                                    top_offset = cube_size_screen * 0.3
+                                    top_points = [
+                                        (center_x - cube_size_screen/2 - top_offset, center_y - cube_size_screen/2 - top_offset),
+                                        (center_x + cube_size_screen/2 - top_offset, center_y - cube_size_screen/2 - top_offset),
+                                        (center_x + cube_size_screen/2 + top_offset, center_y - cube_size_screen/2 + top_offset),
+                                        (center_x - cube_size_screen/2 + top_offset, center_y - cube_size_screen/2 + top_offset)
+                                    ]
+                                    self.draw_polygon(top_points, top_color)
+                                    
+                                    # Draw front face (brighter)
+                                    front_points = [
+                                        (center_x - cube_size_screen/2, center_y - cube_size_screen/2),
+                                        (center_x + cube_size_screen/2, center_y - cube_size_screen/2),
+                                        (center_x + cube_size_screen/2, center_y + cube_size_screen/2),
+                                        (center_x - cube_size_screen/2, center_y + cube_size_screen/2)
+                                    ]
+                                    self.draw_polygon(front_points, color)
+                                    self.draw_polygon_outline(front_points, self.WHITE)
+                                    
+                                    # Draw right face (medium brightness)
+                                    right_brightness = 0.85
+                                    right_color = (int(color[0] * right_brightness), int(color[1] * right_brightness), int(color[2] * right_brightness))
+                                    right_points = [
+                                        (center_x + cube_size_screen/2, center_y - cube_size_screen/2),
+                                        (center_x + cube_size_screen/2 + top_offset*2, center_y - cube_size_screen/2 + top_offset*2),
+                                        (center_x + cube_size_screen/2 + top_offset*2, center_y + cube_size_screen/2 + top_offset*2),
+                                        (center_x + cube_size_screen/2, center_y + cube_size_screen/2)
+                                    ]
+                                    self.draw_polygon(right_points, right_color)
+                                    
+                                    # Draw edges
+                                    self.draw_polygon_outline(top_points, self.WHITE)
+                                    self.draw_polygon_outline(right_points, self.WHITE)
                     except Exception as e:
                         pass
             else:
@@ -1513,10 +1895,48 @@ class BrowserRenderer:
                             screen_y = self.height / 2 + rotated_y
                             
                             if 0 <= screen_x < self.width and 0 <= screen_y < self.height:
-                                if entity.id == 'player':
-                                    self.draw_circle(screen_x, screen_y, 15, self.BLUE)
-                                else:
-                                    self.draw_circle(screen_x, screen_y, 10, self.RED)
+                                # All entities are green cubes
+                                color = self.GREEN
+                                entity_height = getattr(entity, 'height', PLAYER_HEIGHT_UNITS)
+                                cube_width = entity_height / 6.0
+                                cube_size = int(cube_width * perspective_scale)
+                                cube_offset = int(cube_size * 0.3)
+                                
+                                # Draw top face (darker)
+                                top_brightness = 0.7
+                                top_color = (int(color[0] * top_brightness), int(color[1] * top_brightness), int(color[2] * top_brightness))
+                                top_points = [
+                                    (screen_x - cube_size//2 - cube_offset, screen_y - cube_size//2 - cube_offset),
+                                    (screen_x + cube_size//2 - cube_offset, screen_y - cube_size//2 - cube_offset),
+                                    (screen_x + cube_size//2 + cube_offset, screen_y - cube_size//2 + cube_offset),
+                                    (screen_x - cube_size//2 + cube_offset, screen_y - cube_size//2 + cube_offset)
+                                ]
+                                self.draw_polygon(top_points, top_color)
+                                
+                                # Draw front face (brighter)
+                                front_points = [
+                                    (screen_x - cube_size//2, screen_y - cube_size//2),
+                                    (screen_x + cube_size//2, screen_y - cube_size//2),
+                                    (screen_x + cube_size//2, screen_y + cube_size//2),
+                                    (screen_x - cube_size//2, screen_y + cube_size//2)
+                                ]
+                                self.draw_polygon(front_points, color)
+                                self.draw_polygon_outline(front_points, self.WHITE)
+                                
+                                # Draw right face (medium brightness)
+                                right_brightness = 0.85
+                                right_color = (int(color[0] * right_brightness), int(color[1] * right_brightness), int(color[2] * right_brightness))
+                                right_points = [
+                                    (screen_x + cube_size//2, screen_y - cube_size//2),
+                                    (screen_x + cube_size//2 + cube_offset*2, screen_y - cube_size//2 + cube_offset*2),
+                                    (screen_x + cube_size//2 + cube_offset*2, screen_y + cube_size//2 + cube_offset*2),
+                                    (screen_x + cube_size//2, screen_y + cube_size//2)
+                                ]
+                                self.draw_polygon(right_points, right_color)
+                                
+                                # Draw edges
+                                self.draw_polygon_outline(top_points, self.WHITE)
+                                self.draw_polygon_outline(right_points, self.WHITE)
                     except Exception as e:
                         pass
             
@@ -1530,13 +1950,30 @@ class BrowserRenderer:
                     except:
                         pass
             
-            # Draw FPS
+            # Draw FPS and health
             self.ctx.fillStyle = 'rgb(255, 255, 255)'
             self.ctx.font = '16px monospace'
             self.ctx.fillText('FPS: ' + str(fps), 10, 30)
             self.ctx.fillText('Frame: ' + str(frame_count), 10, 50)
+            
+            # Draw player health
+            try:
+                if 'player' in js.gameState and js.gameState['player']:
+                    player = js.gameState['player']
+                    health = getattr(player, 'health', 100.0)
+                    health_color = 'rgb(255, 255, 255)'
+                    if health < 30:
+                        health_color = 'rgb(255, 0, 0)'
+                    elif health < 60:
+                        health_color = 'rgb(255, 255, 0)'
+                    self.ctx.fillStyle = health_color
+                    self.ctx.fillText('Health: ' + str(int(health)), 10, 70)
+            except:
+                pass
+            
             if fpv_mode:
-                self.ctx.fillText('3D Mode', 10, 70)
+                self.ctx.fillStyle = 'rgb(255, 255, 255)'
+                self.ctx.fillText('3D Mode', 10, 90)
         except Exception as e:
             js = __import__('js')
             js.console.error('Render error:', str(e))
@@ -1573,9 +2010,51 @@ class BrowserRenderer:
                 } catch (e) {
                     // Frame count might not be available yet
                 }
+                try {
+                    const health = pyodide.runPython(`
+                        if 'player' in js.gameState and js.gameState['player']:
+                            int(js.gameState['player'].health)
+                        else:
+                            100
+                    `);
+                    const healthEl = document.getElementById('health');
+                    if (healthEl) {
+                        healthEl.textContent = health;
+                        healthEl.style.color = health < 30 ? '#ff0000' : (health < 60 ? '#ffff00' : '#ffffff');
+                    }
+                } catch (e) {
+                    // Health might not be available yet
+                }
             }
 
             try {
+                // Check for game over state (after frame processing, checked in Python code above)
+                if (gameState === 'playing' && pyodide && window.gameState) {
+                    try {
+                        const gameOver = pyodide.runPython(`
+                            if 'engine' in js.gameState and js.gameState['engine']:
+                                engine = js.gameState['engine']
+                                if hasattr(engine, 'game_state'):
+                                    engine.game_state == GameState.GAME_OVER
+                                else:
+                                    False
+                            else:
+                                False
+                        `);
+                        if (gameOver) {
+                            gameState = 'game_over';
+                            showGameOverScreen();
+                        }
+                    } catch (e) {
+                        // Ignore errors checking game state
+                    }
+                }
+
+                if (gameState !== 'playing') {
+                    requestAnimationFrame(gameLoop);
+                    return;
+                }
+
                 // Get input state
                 const keysState = getKeyState();
                 const mouseState = getMouseState();
@@ -1597,7 +2076,17 @@ class BrowserRenderer:
                         'keys': json.loads(keys_json),
                         'mouse': json.loads(mouse_json)
                     }
-                    js.gameState['engine'].process_frame(input_data)
+                    engine = js.gameState['engine']
+                    engine.process_frame(input_data)
+                    
+                    # Check for game over after processing frame
+                    if hasattr(engine, 'game_state') and engine.game_state == GameState.GAME_OVER:
+                        pass  # Game over state already set
+                    elif 'player' in js.gameState and js.gameState['player']:
+                        player = js.gameState['player']
+                        if player.health <= 0.0:
+                            if hasattr(engine, 'game_state'):
+                                engine.game_state = GameState.GAME_OVER
                 `);
 
                 // Render - handle both full engine and simplified engine
@@ -1700,28 +2189,142 @@ class BrowserRenderer:
             document.getElementById('errorMessage').textContent = message;
         }
 
+        let gameState = 'epilepsy_warning'; // epilepsy_warning, new_game, playing, game_over
+
         // Epilepsy warning handler
-        function startGame() {
-            // Hide epilepsy warning
+        function acknowledgeEpilepsyWarning() {
             const warning = document.getElementById('epilepsyWarning');
             if (warning) {
                 warning.classList.add('hidden');
             }
+            gameState = 'new_game';
+            showNewGameScreen();
+        }
+
+        // New game screen handler
+        function showNewGameScreen() {
+            const newGameScreen = document.getElementById('newGameScreen');
+            if (newGameScreen) {
+                newGameScreen.classList.remove('hidden');
+            }
+        }
+
+        function startGame() {
+            // Hide new game screen
+            const newGameScreen = document.getElementById('newGameScreen');
+            if (newGameScreen) {
+                newGameScreen.classList.add('hidden');
+            }
+            gameState = 'playing';
 
             setTimeout(() => {
                 initPyodide();
             }, 500); // Small delay for visual effect
         }
 
+        function showGameOverScreen() {
+            const gameOverScreen = document.getElementById('gameOverScreen');
+            if (gameOverScreen) {
+                gameOverScreen.classList.remove('hidden');
+            }
+            gameState = 'game_over';
+        }
+
+        function hideGameOverScreen() {
+            const gameOverScreen = document.getElementById('gameOverScreen');
+            if (gameOverScreen) {
+                gameOverScreen.classList.add('hidden');
+            }
+        }
+
+        function restartGame() {
+            hideGameOverScreen();
+            gameState = 'playing';
+            // Reset player health via Python
+            if (pyodide && window.gameState && window.gameState.engine) {
+                try {
+                    pyodide.runPython(`
+                        if 'player' in js.gameState and js.gameState['player']:
+                            # Update player health
+                            player = js.gameState['player']
+                            player.health = 100.0
+                            # Update in entities list
+                            engine = js.gameState['engine']
+                            
+                            # Get player height
+                            player_height = getattr(player, 'height', PLAYER_HEIGHT_UNITS)
+                            player_properties = getattr(player, 'properties', {})
+                            
+                            for i, e in enumerate(engine.entities):
+                                if e.id == 'player':
+                                    # Create updated player with full health
+                                    updated_player = GameEntity(
+                                        id=player.id,
+                                        position=player.position,
+                                        velocity=(0.0, 0.0, 0.0),
+                                        health=100.0,
+                                        description=getattr(player, 'description', ''),
+                                        properties=player_properties,
+                                        height=player_height
+                                    )
+                                    engine.entities[i] = updated_player
+                                    js.gameState['player'] = updated_player
+                                    break
+                            # Reset game state
+                            engine.game_state = GameState.PLAYING
+                            if hasattr(engine, 'npc_damage_cooldowns'):
+                                engine.npc_damage_cooldowns = {}
+                    `);
+                } catch (e) {
+                    console.error('Error restarting game:', e);
+                }
+            }
+        }
+
         // Show epilepsy warning when page loads
         window.addEventListener('load', () => {
             const acknowledgeButton = document.getElementById('acknowledgeWarning');
             if (acknowledgeButton) {
-                acknowledgeButton.addEventListener('click', startGame);
-            } else {
-                // Fallback: if button not found, start game after delay
-                setTimeout(startGame, 1000);
+                acknowledgeButton.addEventListener('click', acknowledgeEpilepsyWarning);
             }
+
+            const startGameButton = document.getElementById('startGameButton');
+            if (startGameButton) {
+                startGameButton.addEventListener('click', startGame);
+            }
+
+            const newGameButton = document.getElementById('newGameButton');
+            if (newGameButton) {
+                newGameButton.addEventListener('click', restartGame);
+            }
+
+            const quitGameButton = document.getElementById('quitGameButton');
+            if (quitGameButton) {
+                quitGameButton.addEventListener('click', () => {
+                    gameRunning = false;
+                    alert('Game quit');
+                });
+            }
+
+            // Keyboard handlers for screens
+            document.addEventListener('keydown', (e) => {
+                if (gameState === 'epilepsy_warning' && (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape')) {
+                    e.preventDefault();
+                    acknowledgeEpilepsyWarning();
+                } else if (gameState === 'new_game' && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    startGame();
+                } else if (gameState === 'game_over') {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        restartGame();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        gameRunning = false;
+                        alert('Game quit');
+                    }
+                }
+            });
         });
     </script>
 </body>
