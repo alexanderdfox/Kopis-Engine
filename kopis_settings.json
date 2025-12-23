@@ -1,0 +1,6 @@
+{
+  "npc_count": 5,
+  "fov": 110,
+  "max_depth": 500,
+  "raycast_skip": 4
+}

@@ -303,6 +303,291 @@
         .epilepsy-warning-button:active {
             transform: scale(0.98);
         }
+
+        /* New Game Screen */
+        .new-game-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            backdrop-filter: blur(10px);
+        }
+
+        .new-game-screen.hidden {
+            display: none;
+        }
+
+        .new-game-content {
+            background: linear-gradient(135deg, #1a2e1a 0%, #162e16 100%);
+            border: 3px solid #44ff44;
+            border-radius: 15px;
+            padding: 40px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 0 50px rgba(68, 255, 68, 0.5);
+        }
+
+        .new-game-content h2 {
+            color: #44ff44;
+            font-size: 32px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .new-game-content p {
+            color: #fff;
+            font-size: 18px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .new-game-button {
+            background: linear-gradient(135deg, #44ff44, #00cc00);
+            color: #000;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .new-game-button:hover {
+            background: linear-gradient(135deg, #66ff66, #00ff00);
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(68, 255, 68, 0.7);
+        }
+
+        /* Game Over Screen */
+        .game-over-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10001;
+            backdrop-filter: blur(10px);
+        }
+
+        .game-over-screen.hidden {
+            display: none;
+        }
+
+        .game-over-content {
+            background: linear-gradient(135deg, #2e1a1a 0%, #2e1616 100%);
+            border: 3px solid #ff4444;
+            border-radius: 15px;
+            padding: 40px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 0 50px rgba(255, 68, 68, 0.5);
+        }
+
+        .game-over-content h2 {
+            color: #ff4444;
+            font-size: 32px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .game-over-content p {
+            color: #fff;
+            font-size: 18px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .game-over-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .game-over-button {
+            background: linear-gradient(135deg, #44ff44, #00cc00);
+            color: #000;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            width: 300px;
+        }
+
+        .game-over-button.quit {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: #fff;
+        }
+
+        .game-over-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(68, 255, 68, 0.7);
+        }
+
+        .game-over-button.quit:hover {
+            box-shadow: 0 0 20px rgba(255, 68, 68, 0.7);
+        }
+
+        /* Options Screen */
+        .options-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9998;
+            backdrop-filter: blur(10px);
+        }
+
+        .options-screen.hidden {
+            display: none;
+        }
+
+        .options-content {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 3px solid #5b9bd5;
+            border-radius: 15px;
+            padding: 40px;
+            max-width: 700px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 0 50px rgba(91, 155, 213, 0.5);
+        }
+
+        .options-content h2 {
+            color: #5b9bd5;
+            font-size: 32px;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-align: center;
+        }
+
+        .options-section {
+            margin-bottom: 30px;
+        }
+
+        .options-section h3 {
+            color: #00d4ff;
+            font-size: 20px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #0f3460;
+            padding-bottom: 5px;
+        }
+
+        .setting-item {
+            margin-bottom: 20px;
+        }
+
+        .setting-item label {
+            display: block;
+            color: #fff;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .setting-item .setting-value {
+            display: inline-block;
+            color: #00d4ff;
+            font-weight: bold;
+            margin-left: 10px;
+            min-width: 60px;
+        }
+
+        .setting-item input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #0f3460;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .setting-item input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00d4ff;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+        }
+
+        .setting-item input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00d4ff;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+        }
+
+        .setting-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .options-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .options-button {
+            background: linear-gradient(135deg, #5b9bd5, #0f3460);
+            color: #fff;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .options-button:hover {
+            background: linear-gradient(135deg, #00d4ff, #5b9bd5);
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.7);
+        }
+
+        .options-button.secondary {
+            background: linear-gradient(135deg, #666, #333);
+        }
+
+        .options-button.secondary:hover {
+            background: linear-gradient(135deg, #888, #555);
+        }
     </style>
 </head>
 <body>
@@ -322,6 +607,119 @@
             <button class="epilepsy-warning-button" id="acknowledgeWarning">
                 I Understand - Continue
             </button>
+        </div>
+    </div>
+
+    <!-- New Game Screen -->
+    <div class="new-game-screen" id="newGameScreen">
+        <div class="new-game-content">
+            <h2>NEW GAME</h2>
+            <p>
+                Welcome to Kopis Engine!
+            </p>
+            <p>
+                Navigate the infinite maze.<br>
+                Use your sword to fight NPCs!<br>
+                Avoid NPCs or you'll take damage!
+            </p>
+            <p style="font-size: 16px;">
+                Use WASD to move, Space to jump,<br>
+                Mouse/Touch to look around,<br>
+                Click/Tap to swing sword.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
+                <button class="new-game-button" id="startGameButton">
+                    Press ENTER, SPACE, or CLICK to Start
+                </button>
+                <button class="options-button secondary" id="optionsButton" style="width: 300px;">
+                    OPTIONS
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Options Screen -->
+    <div class="options-screen hidden" id="optionsScreen">
+        <div class="options-content">
+            <h2>OPTIONS</h2>
+            
+            <div class="options-section">
+                <h3>Gameplay Settings</h3>
+                <div class="setting-item">
+                    <label>
+                        NPC Count: <span class="setting-value" id="npcCountValue">25</span>
+                        <input type="range" id="npcCountSlider" min="5" max="50" value="25" step="5">
+                    </label>
+                </div>
+            </div>
+
+            <div class="options-section">
+                <h3>Visual Settings</h3>
+                <div class="setting-item">
+                    <label>
+                        Field of View (FOV): <span class="setting-value" id="fovValue">60</span>°
+                        <input type="range" id="fovSlider" min="45" max="110" value="60" step="5">
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label>
+                        Max Render Distance: <span class="setting-value" id="maxDepthValue">1000</span>
+                        <input type="range" id="maxDepthSlider" min="500" max="2000" value="1000" step="100">
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label>
+                        <input type="checkbox" id="showFPS" checked>
+                        Show FPS Counter
+                    </label>
+                </div>
+            </div>
+
+            <div class="options-section">
+                <h3>Performance Settings</h3>
+                <div class="setting-item">
+                    <label>
+                        Raycast Skip: <span class="setting-value" id="raycastSkipValue">2</span>
+                        <input type="range" id="raycastSkipSlider" min="1" max="4" value="2" step="1">
+                    </label>
+                    <small style="color: #888; font-size: 12px;">Higher values = better performance, lower quality</small>
+                </div>
+                <div class="setting-item">
+                    <label>
+                        <input type="checkbox" id="enablePerformanceMonitor" checked>
+                        Enable Runtime Performance Adjustment
+                    </label>
+                    <small style="color: #888; font-size: 12px;">Automatically adjust settings if FPS drops (disabled when manually adjusting)</small>
+                </div>
+            </div>
+
+            <div class="options-buttons">
+                <button class="options-button" id="saveOptionsButton">SAVE & CLOSE</button>
+                <button class="options-button secondary" id="cancelOptionsButton">CANCEL</button>
+                <button class="options-button secondary" id="autoOptimizeButton">AUTO-OPTIMIZE</button>
+                <button class="options-button secondary" id="resetOptionsButton">RESET DEFAULTS</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div class="game-over-screen hidden" id="gameOverScreen">
+        <div class="game-over-content">
+            <h2>GAME OVER</h2>
+            <p>
+                Your health has reached zero!
+            </p>
+            <p>
+                The maze has claimed another victim.
+            </p>
+            <div class="game-over-buttons">
+                <button class="game-over-button" id="newGameButton">
+                    NEW GAME (ENTER/SPACE)
+                </button>
+                <button class="game-over-button quit" id="quitGameButton">
+                    QUIT (ESC)
+                </button>
+            </div>
         </div>
     </div>
 
@@ -376,12 +774,215 @@
         const NPC_RADIUS = 8;
 
         // Game Constants - 3D
+        const FEET_TO_UNITS = 30.0; // 1 foot = 30 units
+        const STORY_HEIGHT_UNITS = 10.0 * FEET_TO_UNITS; // 10 feet = 300 units
+        const PLAYER_HEIGHT_UNITS = 6.0 * FEET_TO_UNITS; // 6 feet = 180 units
         const GRAVITY = 32.2 * 30; // 966 units/s² (realistic for 10-foot room)
         const GROUND_LEVEL = 0.0;
-        const CEILING_LEVEL = 300.0; // 10 feet = 300 units
-        const CAMERA_HEIGHT = 150.0; // 5 feet eye level
+        const CEILING_LEVEL = STORY_HEIGHT_UNITS; // 10 feet = 300 units
+        const CAMERA_HEIGHT = PLAYER_HEIGHT_UNITS * 0.833; // 5 feet eye level (~83% of 6 feet)
         const JUMP_FORCE = 637.0; // Jump to 7 feet (210 units)
         
+        // Performance-based auto-optimization
+        function detectDeviceCapabilities() {
+            const capabilities = {
+                memory: navigator.deviceMemory || 4, // GB, default to 4 if not available
+                cores: navigator.hardwareConcurrency || 4, // CPU cores, default to 4
+                screenWidth: window.screen.width || 1920,
+                screenHeight: window.screen.height || 1080,
+                pixelRatio: window.devicePixelRatio || 1,
+                isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
+                isLowEnd: false
+            };
+            
+            // Determine if device is low-end
+            const totalPixels = capabilities.screenWidth * capabilities.screenHeight * capabilities.pixelRatio;
+            capabilities.isLowEnd = 
+                capabilities.memory < 4 || 
+                capabilities.cores < 4 || 
+                totalPixels > 3840 * 2160 || // 4K or higher
+                capabilities.isMobile;
+            
+            return capabilities;
+        }
+        
+        function autoOptimizeSettings() {
+            // Check if user has manually set settings (skip auto-optimization if they have)
+            const hasManualSettings = localStorage.getItem('kopis_autoOptimized') === 'false' ||
+                                     localStorage.getItem('kopis_manualSettings') === 'true';
+            
+            if (hasManualSettings) {
+                console.log('Using manual settings, skipping auto-optimization');
+                return;
+            }
+            
+            const caps = detectDeviceCapabilities();
+            console.log('Device capabilities:', caps);
+            
+            let optimizedSettings = {
+                npcCount: 25,
+                fov: 60,
+                maxDepth: 1000,
+                raycastSkip: 2,
+                showFPS: true
+            };
+            
+            // Optimize based on device capabilities
+            if (caps.isLowEnd) {
+                // Low-end device: aggressive optimization
+                optimizedSettings.npcCount = 10;
+                optimizedSettings.fov = 50;
+                optimizedSettings.maxDepth = 600;
+                optimizedSettings.raycastSkip = 3;
+                console.log('Auto-optimized for low-end device');
+            } else if (caps.memory < 8 || caps.cores < 6) {
+                // Mid-range device: moderate optimization
+                optimizedSettings.npcCount = 18;
+                optimizedSettings.fov = 55;
+                optimizedSettings.maxDepth = 800;
+                optimizedSettings.raycastSkip = 2;
+                console.log('Auto-optimized for mid-range device');
+            } else {
+                // High-end device: default/quality settings
+                optimizedSettings.npcCount = 25;
+                optimizedSettings.fov = 60;
+                optimizedSettings.maxDepth = 1000;
+                optimizedSettings.raycastSkip = 2;
+                console.log('Auto-optimized for high-end device');
+            }
+            
+            // Apply mobile-specific optimizations
+            if (caps.isMobile) {
+                optimizedSettings.npcCount = Math.min(optimizedSettings.npcCount, 15);
+                optimizedSettings.raycastSkip = Math.max(optimizedSettings.raycastSkip, 2);
+                optimizedSettings.maxDepth = Math.min(optimizedSettings.maxDepth, 700);
+            }
+            
+            // Save optimized settings
+            localStorage.setItem('kopis_npcCount', optimizedSettings.npcCount.toString());
+            localStorage.setItem('kopis_fov', optimizedSettings.fov.toString());
+            localStorage.setItem('kopis_maxDepth', optimizedSettings.maxDepth.toString());
+            localStorage.setItem('kopis_raycastSkip', optimizedSettings.raycastSkip.toString());
+            localStorage.setItem('kopis_autoOptimized', 'true');
+            localStorage.setItem('kopis_autoOptimizeDate', new Date().toISOString());
+            
+            return optimizedSettings;
+        }
+        
+        function adjustSettingsForPerformance(currentFPS) {
+            // Only adjust if performance monitoring is enabled and user hasn't disabled auto-adjustment
+            if (!game.performanceMonitor.enabled || localStorage.getItem('kopis_manualSettings') === 'true') {
+                return;
+            }
+            
+            // Only adjust every N seconds to avoid thrashing
+            const now = performance.now();
+            if (now - game.performanceMonitor.lastAdjustment < game.performanceMonitor.adjustmentInterval) {
+                return;
+            }
+            
+            // Track FPS history
+            game.performanceMonitor.fpsHistory.push(currentFPS);
+            if (game.performanceMonitor.fpsHistory.length > 60) {
+                game.performanceMonitor.fpsHistory.shift(); // Keep last 60 readings
+            }
+            
+            // Calculate average FPS over recent history
+            if (game.performanceMonitor.fpsHistory.length < 30) {
+                return; // Need at least 30 samples before adjusting
+            }
+            
+            const avgFPS = game.performanceMonitor.fpsHistory.reduce((a, b) => a + b, 0) / game.performanceMonitor.fpsHistory.length;
+            
+            // Adjust settings based on performance
+            let adjusted = false;
+            const adjustments = [];
+            
+            if (avgFPS < game.performanceMonitor.minFPS) {
+                // Performance is critically low - aggressive optimization
+                if (gameSettings.raycastSkip < 4) {
+                    gameSettings.raycastSkip = Math.min(4, gameSettings.raycastSkip + 1);
+                    adjusted = true;
+                    adjustments.push('Raycast quality: lowered');
+                }
+                if (gameSettings.npcCount > 5) {
+                    gameSettings.npcCount = Math.max(5, gameSettings.npcCount - 5);
+                    adjusted = true;
+                    adjustments.push('NPCs: reduced');
+                }
+                if (gameSettings.maxDepth > 500) {
+                    gameSettings.maxDepth = Math.max(500, gameSettings.maxDepth - 100);
+                    adjusted = true;
+                    adjustments.push('Render distance: reduced');
+                }
+                console.log(`Performance critically low (${avgFPS.toFixed(1)} FPS). Adjustments: ${adjustments.join(', ')}`);
+            } else if (avgFPS < game.performanceMonitor.targetFPS) {
+                // Performance is below target - moderate optimization
+                if (gameSettings.raycastSkip < 3) {
+                    gameSettings.raycastSkip += 1;
+                    adjusted = true;
+                    adjustments.push('Raycast quality: lowered');
+                }
+                if (gameSettings.npcCount > 10) {
+                    gameSettings.npcCount = Math.max(10, gameSettings.npcCount - 3);
+                    adjusted = true;
+                    adjustments.push('NPCs: reduced');
+                }
+                if (gameSettings.maxDepth > 700) {
+                    gameSettings.maxDepth = Math.max(700, gameSettings.maxDepth - 50);
+                    adjusted = true;
+                    adjustments.push('Render distance: reduced');
+                }
+                console.log(`Performance below target (${avgFPS.toFixed(1)} FPS). Adjustments: ${adjustments.join(', ')}`);
+            } else if (avgFPS > 75 && gameSettings.raycastSkip > 1 && gameSettings.npcCount < 30) {
+                // Performance is great - can increase quality (conservatively)
+                if (gameSettings.raycastSkip > 1 && Math.random() < 0.3) { // 30% chance per check to avoid oscillating
+                    gameSettings.raycastSkip -= 1;
+                    adjusted = true;
+                    adjustments.push('Raycast quality: increased');
+                }
+                if (gameSettings.npcCount < 30 && Math.random() < 0.3) {
+                    gameSettings.npcCount = Math.min(30, gameSettings.npcCount + 2);
+                    adjusted = true;
+                    adjustments.push('NPCs: increased');
+                }
+                if (gameSettings.maxDepth < 1000 && Math.random() < 0.3) {
+                    gameSettings.maxDepth = Math.min(1000, gameSettings.maxDepth + 50);
+                    adjusted = true;
+                    adjustments.push('Render distance: increased');
+                }
+                if (adjusted) {
+                    console.log(`Performance excellent (${avgFPS.toFixed(1)} FPS). Adjustments: ${adjustments.join(', ')}`);
+                }
+            }
+            
+            if (adjusted) {
+                // Save adjusted settings (but don't mark as manual)
+                localStorage.setItem('kopis_npcCount', gameSettings.npcCount.toString());
+                localStorage.setItem('kopis_raycastSkip', gameSettings.raycastSkip.toString());
+                localStorage.setItem('kopis_maxDepth', gameSettings.maxDepth.toString());
+                game.performanceMonitor.lastAdjustment = now;
+            }
+        }
+        
+        // Game Settings (loaded from localStorage or auto-optimized)
+        let gameSettings = {
+            npcCount: parseInt(localStorage.getItem('kopis_npcCount') || '25'),
+            fov: parseInt(localStorage.getItem('kopis_fov') || '60'),
+            maxDepth: parseInt(localStorage.getItem('kopis_maxDepth') || '1000'),
+            raycastSkip: parseInt(localStorage.getItem('kopis_raycastSkip') || '2'),
+            showFPS: localStorage.getItem('kopis_showFPS') !== 'false'
+        };
+        
+        // Auto-optimize on first load or if settings don't exist
+        // Note: performanceMonitor.enabled will be set after game object is initialized
+        if (!localStorage.getItem('kopis_autoOptimized') && !localStorage.getItem('kopis_manualSettings')) {
+            const optimized = autoOptimizeSettings();
+            if (optimized) {
+                gameSettings = optimized;
+            }
+        }
+
         // Game State - 3D
         const game = {
             canvas: null,
@@ -399,6 +1000,16 @@
             keys: {},
             mouse: { x: 0, y: 0, worldX: 0, worldY: 0, active: false, dx: 0, dy: 0 },
             touch: { x: 0, y: 0, worldX: 0, worldY: 0, active: false, touchId: null },
+            gamepad: null, // Current gamepad
+            gamepadDeadzone: 0.15, // Dead zone to prevent drift
+            performanceMonitor: {
+                enabled: localStorage.getItem('kopis_manualSettings') !== 'true', // Enable dynamic performance adjustment (default to enabled unless manually set)
+                lastAdjustment: 0, // Last time settings were adjusted
+                adjustmentInterval: 5000, // Adjust at most every 5 seconds
+                fpsHistory: [], // Keep last 60 FPS readings
+                targetFPS: 55, // Target FPS (allow slight drop below 60)
+                minFPS: 30 // Minimum acceptable FPS
+            },
             frame: 0,
             lastTime: 0,
             fps: 0,
@@ -409,7 +1020,15 @@
             gameOfLife: null, // Shared Game of Life instance
             gameOfLifeUpdateCounter: 0,
             gameOfLifeResetCounter: 0, // Counter for resetting Game of Life every 30 frames
-            rayResults: [] // Store raycast results for sprite rendering
+            rayResults: [], // Store raycast results for sprite rendering
+            // Sword system
+            swordImage: null,
+            swordSwingState: 0.0, // 0.0 = idle, 0.0-1.0 = swing animation progress
+            swordSwingSpeed: 8.0, // Animation speed (swings per second when active)
+            swordDamageCooldowns: {}, // Track damage cooldowns per entity
+            // Game state
+            gameState: 'playing', // 'menu', 'playing', 'game_over'
+            npcDamageCooldowns: {} // Track NPC collision damage cooldowns
         };
 
         // Sound Manager
@@ -1063,10 +1682,117 @@
             }
         }
 
+        // Load sword image
+        function loadSwordImage() {
+            const swordImg = new Image();
+            swordImg.onload = function() {
+                // Scale sword to reasonable size for weapon overlay
+                const targetHeight = Math.min(200, game.canvas.height / 3); // Max 200px or 1/3 screen height
+                const scaleFactor = targetHeight / swordImg.height;
+                const newWidth = swordImg.width * scaleFactor;
+                const newHeight = swordImg.height * scaleFactor;
+                
+                // Create scaled canvas for the sword
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = newWidth;
+                tempCanvas.height = newHeight;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(swordImg, 0, 0, newWidth, newHeight);
+                
+                // Rotate 180 degrees (blade at top, handle at bottom)
+                const rotatedCanvas = document.createElement('canvas');
+                rotatedCanvas.width = newWidth;
+                rotatedCanvas.height = newHeight;
+                const rotatedCtx = rotatedCanvas.getContext('2d');
+                rotatedCtx.translate(newWidth / 2, newHeight / 2);
+                rotatedCtx.rotate(Math.PI); // 180 degrees
+                rotatedCtx.drawImage(tempCanvas, -newWidth / 2, -newHeight / 2);
+                
+                game.swordImage = rotatedCanvas;
+                console.log('✓ Loaded sword image, rotated 180°');
+            };
+            swordImg.onerror = function() {
+                console.warn('⚠ Could not load sword image: kopis.png');
+                game.swordImage = null;
+            };
+            swordImg.src = 'kopis.png';
+        }
+
+        // Gamepad/Joystick support
+        function initGamepad() {
+            // Check for gamepad support
+            if (!navigator.getGamepads && !navigator.webkitGetGamepads) {
+                console.log('Gamepad API not supported');
+                return;
+            }
+            
+            // Listen for gamepad connection/disconnection
+            window.addEventListener('gamepadconnected', (e) => {
+                console.log('Gamepad connected:', e.gamepad.id);
+                game.gamepad = e.gamepad;
+            });
+            
+            window.addEventListener('gamepaddisconnected', (e) => {
+                console.log('Gamepad disconnected:', e.gamepad.id);
+                if (game.gamepad && game.gamepad.index === e.gamepad.index) {
+                    game.gamepad = null;
+                }
+            });
+        }
+        
+        function getGamepadInput() {
+            const gamepads = navigator.getGamepads ? navigator.getGamepads() : 
+                           (navigator.webkitGetGamepads ? navigator.webkitGetGamepads() : []);
+            
+            if (!gamepads || gamepads.length === 0) {
+                return null;
+            }
+            
+            // Use first connected gamepad
+            const pad = gamepads[0];
+            if (!pad || !pad.connected) {
+                return null;
+            }
+            
+            // Dead zone function
+            const applyDeadzone = (value, deadzone) => {
+                if (Math.abs(value) < deadzone) return 0;
+                return value;
+            };
+            
+            // Get axes (standard layout: [leftX, leftY, rightX, rightY])
+            const axes = pad.axes || [];
+            const leftX = axes.length > 0 ? applyDeadzone(axes[0], game.gamepadDeadzone) : 0;
+            const leftY = axes.length > 1 ? applyDeadzone(axes[1], game.gamepadDeadzone) : 0;
+            const rightX = axes.length > 2 ? applyDeadzone(axes[2], game.gamepadDeadzone) : 0;
+            const rightY = axes.length > 3 ? applyDeadzone(axes[3], game.gamepadDeadzone) : 0;
+            
+            // Get buttons
+            const buttons = pad.buttons || [];
+            const jump = buttons.length > 0 && buttons[0].pressed; // A button (Xbox) or Cross (PS)
+            const sword = (buttons.length > 2 && buttons[2].pressed) || // X button (Xbox) or Square (PS)
+                         (axes.length > 4 && axes[4] > 0.5); // Right trigger
+            
+            return {
+                moveForward: -leftY, // Invert Y axis
+                moveRight: leftX,
+                cameraDx: rightX * 2.0, // Scale for sensitivity
+                cameraDy: -rightY * 2.0, // Invert and scale
+                jump: jump,
+                sword: sword
+            };
+        }
+
         // Initialize Game
         function init() {
             game.canvas = document.getElementById('gameCanvas');
             game.ctx = game.canvas.getContext('2d');
+            
+            // Initialize gamepad support
+            initGamepad();
+            
+            // Load sword image
+            loadSwordImage();
             
             // Set canvas to fullscreen size initially
             const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
@@ -1088,6 +1814,7 @@
                 vz: 0, // 3D velocity
                 health: 100,
                 radius: PLAYER_RADIUS,
+                height: PLAYER_HEIGHT_UNITS, // 6 feet = 180 units
                 lastX: 0,
                 lastY: 0,
                 trail: [],
@@ -1189,49 +1916,38 @@
 
             game.entities.push(game.player);
 
-            // Create NPCs at valid positions - OPTIMIZED for many NPCs
-            // Use cell-based positioning like Python version to ensure NPCs are on valid path cells
+            // Create NPCs at valid positions within 10 seconds distance at 60fps
+            // Player speed = 200 units/second, so 10 seconds = 2000 units max distance
+            // Spawn NPCs at various distances up to 2000 units
             let npcCount = 0;
-            const MAX_NPCS = 25; // Reduced from 50 to 25 for better FPS with Game of Life rendering
+            const MAX_NPCS = gameSettings.npcCount; // Load from settings
+            const MAX_SPAWN_DISTANCE = 2000.0; // 10 seconds * 200 units/second = 2000 units
+            const MIN_SPAWN_DISTANCE = 200.0; // Minimum distance to avoid crowding
             const startCellX = Math.floor(game.player.x / CELL_SIZE);
             const startCellY = Math.floor(game.player.y / CELL_SIZE);
             
             for (let i = 0; i < MAX_NPCS; i++) {
-                // Find a nearby path cell for NPC (like Python version)
-                const npcOffset = (i + 1) * 3; // Space NPCs out
-                let npcCellX = startCellX + npcOffset;
-                let npcCellY = startCellY;
+                // Use random angle and distance for varied spawn positions
+                const angle = (i / MAX_NPCS) * 2 * Math.PI + Math.random() * 0.5; // Add some randomness
+                // Distance ranges from MIN_SPAWN_DISTANCE to MAX_SPAWN_DISTANCE (within 10 second travel time)
+                const dist = MIN_SPAWN_DISTANCE + Math.random() * (MAX_SPAWN_DISTANCE - MIN_SPAWN_DISTANCE);
+                
+                // Calculate spawn position in world coordinates
+                const npcWorldTargetX = game.player.x + Math.cos(angle) * dist;
+                const npcWorldTargetY = game.player.y + Math.sin(angle) * dist;
+                
+                // Find nearest path cell for NPC at this position
+                const nearestPathCell = game.maze.findNearestPathCell(npcWorldTargetX, npcWorldTargetY, 10);
+                if (!nearestPathCell) {
+                    continue; // Skip this NPC if no valid path cell found
+                }
+                
+                let npcCellX = nearestPathCell[0];
+                let npcCellY = nearestPathCell[1];
                 
                 // Ensure chunk is loaded
                 const npcWorldTemp = game.maze.cellToWorld(npcCellX, npcCellY);
                 game.maze.ensureChunksLoaded(npcWorldTemp.x, npcWorldTemp.y);
-                
-                // Verify it's a path, if not find nearby
-                const [chunkX, chunkY] = game.maze.getChunkCoords(npcCellX * CELL_SIZE, npcCellY * CELL_SIZE);
-                const chunk = game.maze.getOrCreateChunk(chunkX, chunkY);
-                let localX = ((npcCellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-                let localY = ((npcCellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-                
-                if (!chunk.paths.has(`${localX},${localY}`)) {
-                    // Try nearby cells
-                    let found = false;
-                    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-                        const testCellX = npcCellX + dx;
-                        const testCellY = npcCellY + dy;
-                        const [testChunkX, testChunkY] = game.maze.getChunkCoords(testCellX * CELL_SIZE, testCellY * CELL_SIZE);
-                        const testChunk = game.maze.getOrCreateChunk(testChunkX, testChunkY);
-                        const testLocalX = ((testCellX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-                        const testLocalY = ((testCellY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-                        
-                        if (testChunk.paths.has(`${testLocalX},${testLocalY}`)) {
-                            npcCellX = testCellX;
-                            npcCellY = testCellY;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) continue; // Skip this NPC if no valid path cell found
-                }
                 
                 const npcWorld = game.maze.cellToWorld(npcCellX, npcCellY);
                 
@@ -1247,6 +1963,7 @@
                         vz: 0, // 3D velocity
                         health: 50,
                         radius: NPC_RADIUS,
+                        height: PLAYER_HEIGHT_UNITS, // 6 feet = 180 units
                         lastX: npcWorld.x,
                         lastY: npcWorld.y,
                         trail: [],
@@ -1581,6 +2298,13 @@
 
             game.canvas.addEventListener('mousedown', (e) => {
                 game.mouse.active = true;
+                
+                // Check for left mouse button click (sword swing)
+                if (e.button === 0 && game.swordSwingState === 0.0 && game.gameState === 'playing') {
+                    game.swordSwingState = 0.01; // Start swing animation
+                    game.swordDamageCooldowns = {}; // Reset damage cooldowns for new swing
+                }
+                
                 // Capture mouse for FPV (Doom-style: click to capture mouse for camera control)
                 if (game.fpvMode && !game.mouseCaptured) {
                     // Try all browser-specific pointer lock methods
@@ -1710,6 +2434,21 @@
             // Input handling - Touch (for tablets and phones)
             game.canvas.addEventListener('touchstart', (e) => {
                 e.preventDefault(); // Prevent scrolling and other default behaviors
+                
+                // Check for sword swing on touch (right side of screen)
+                if (e.touches.length > 0 && game.gameState === 'playing') {
+                    const touch = e.touches[0];
+                    const rect = game.canvas.getBoundingClientRect();
+                    const touchX = touch.clientX - rect.left;
+                    const canvasWidth = game.canvas.width;
+                    
+                    // Touch on right side of screen (sword swing)
+                    if (touchX > canvasWidth * 0.5 && game.swordSwingState === 0.0) {
+                        game.swordSwingState = 0.01; // Start swing animation
+                        game.swordDamageCooldowns = {}; // Reset damage cooldowns for new swing
+                    }
+                }
+                
                 // First user interaction on mobile: attempt to enable gyroscope controls
                 initGyroIfNeeded();
                 if (e.touches.length > 0) {
@@ -1847,10 +2586,161 @@
             document.getElementById('keyD').classList.toggle('active', game.keys['d']);
         }
 
+        // Check sword damage during swing
+        function checkSwordDamage(deltaTime) {
+            if (!game.player || game.swordSwingState <= 0.0 || game.swordSwingState >= 1.0) {
+                return;
+            }
+            
+            // Only apply damage during active swing (middle portion of animation)
+            const swingProgress = game.swordSwingState;
+            if (swingProgress < 0.2 || swingProgress > 0.8) {
+                return; // Too early or too late in swing
+            }
+            
+            // Calculate forward direction based on camera yaw
+            const yawRad = game.cameraYaw * Math.PI / 180;
+            const forwardX = Math.sin(yawRad);
+            const forwardY = -Math.cos(yawRad);
+            
+            // Sword range: about 120 units in front of player
+            const swordRange = 120.0;
+            const swordHitRadius = 40.0; // Wider hit radius for sword swing
+            
+            // Calculate sword tip position (in front of player)
+            const swordTipX = game.player.x + forwardX * swordRange;
+            const swordTipY = game.player.y + forwardY * swordRange;
+            const swordTipZ = game.player.z || 0.0;
+            
+            // Check all entities for damage
+            game.entities.forEach(entity => {
+                // Skip player and already damaged entities this swing
+                if (entity.id === 'player' || entity.id in game.swordDamageCooldowns) {
+                    return;
+                }
+                
+                // Get entity position
+                const entityX = entity.x;
+                const entityY = entity.y;
+                const entityZ = entity.z || 0.0;
+                const entityRadius = entity.radius || NPC_RADIUS;
+                
+                // Calculate distance from sword tip to entity center
+                const dx = entityX - swordTipX;
+                const dy = entityY - swordTipY;
+                const dz = entityZ - swordTipZ;
+                const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                const combinedRadius = swordHitRadius + entityRadius;
+                
+                if (distance < combinedRadius) {
+                    // Hit! Apply damage
+                    const damage = 20.0; // Sword does 20 damage per hit
+                    entity.health = Math.max(0.0, entity.health - damage);
+                    
+                    // Mark as damaged this swing (prevent multiple hits)
+                    game.swordDamageCooldowns[entity.id] = performance.now();
+                    
+                    // Play sound effect
+                    soundManager.playCollision();
+                    
+                    console.log(`⚔ Sword hit ${entity.id} for ${damage} damage! (${entity.health.toFixed(1)} HP remaining)`);
+                }
+            });
+        }
+
+        // Check NPC collisions with player
+        function checkNPCCollisions(deltaTime) {
+            if (!game.player || game.gameState === 'game_over') {
+                return;
+            }
+            
+            const currentTime = performance.now();
+            const playerPos = { x: game.player.x, y: game.player.y, z: game.player.z || 0 };
+            const playerRadius = game.player.radius || PLAYER_RADIUS;
+            
+            game.entities.forEach(entity => {
+                // Only check NPCs
+                if (entity.id === 'player' || !entity.id.startsWith('npc')) {
+                    return;
+                }
+                
+                const npcPos = { x: entity.x, y: entity.y, z: entity.z || 0 };
+                const npcRadius = entity.radius || NPC_RADIUS;
+                
+                // Calculate 3D distance
+                const dx = playerPos.x - npcPos.x;
+                const dy = playerPos.y - npcPos.y;
+                const dz = playerPos.z - npcPos.z;
+                const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                
+                // Check if touching (combined radii)
+                const combinedRadius = playerRadius + npcRadius;
+                if (distance < combinedRadius) {
+                    // Check cooldown (0.5 seconds per NPC)
+                    const lastDamageTime = game.npcDamageCooldowns[entity.id] || 0;
+                    const cooldownDuration = 500; // 500ms = 0.5 seconds
+                    
+                    if (currentTime - lastDamageTime >= cooldownDuration) {
+                        // Apply damage
+                        game.player.health = Math.max(0.0, game.player.health - 5.0);
+                        game.npcDamageCooldowns[entity.id] = currentTime;
+                        
+                        // Check if player is dead
+                        if (game.player.health <= 0.0) {
+                            game.gameState = 'game_over';
+                            currentGameState = 'game_over';
+                            showGameOverScreen();
+                        }
+                    }
+                }
+            });
+        }
+
         function update(deltaTime) {
-            // Doom-style: Mouse movement controls camera rotation ONLY
+            // Check if game is over
+            if (game.gameState === 'game_over' && currentGameState !== 'game_over') {
+                showGameOverScreen();
+            }
+            
+            // Don't update game if not playing
+            if (game.gameState !== 'playing' && currentGameState !== 'playing') {
+                return;
+            }
+            
+            // Check for gamepad sword input
+            const gamepadInput = getGamepadInput();
+            if (gamepadInput && gamepadInput.sword && game.swordSwingState === 0.0 && game.gameState === 'playing') {
+                game.swordSwingState = 0.01; // Start swing animation
+                game.swordDamageCooldowns = {}; // Reset damage cooldowns for new swing
+            }
+            
+            // Update sword swing animation
+            if (game.swordSwingState > 0.0) {
+                game.swordSwingState += game.swordSwingSpeed * deltaTime;
+                if (game.swordSwingState >= 1.0) {
+                    game.swordSwingState = 0.0; // Animation complete
+                    game.swordDamageCooldowns = {}; // Reset damage cooldowns
+                }
+            }
+            
+            // Check for sword damage during swing
+            if (game.swordSwingState > 0.0 && game.swordSwingState < 1.0) {
+                checkSwordDamage(deltaTime);
+            }
+            
+            // Check NPC collisions
+            checkNPCCollisions(deltaTime);
+            
+            // Doom-style: Mouse movement and gamepad controls camera rotation ONLY
             // In FPV mode, mouse movement always rotates camera
             if (game.fpvMode) {
+                // Apply gamepad camera rotation first
+                const gamepadInput = getGamepadInput();
+                if (gamepadInput) {
+                    game.cameraYaw += gamepadInput.cameraDx * 0.15; // Scale for sensitivity
+                    game.cameraPitch += gamepadInput.cameraDy * 0.15;
+                }
+                
                 if (game.mouseCaptured) {
                     // Use pointer lock movement deltas (most accurate for Doom-style)
                     const sensitivity = 0.15; // Doom-style mouse sensitivity
@@ -1904,10 +2794,21 @@
             const rightY = Math.sin(yawRad);
             
             let moveForward = 0, moveRight = 0;
-            if (game.keys['w']) moveForward += 1;
-            if (game.keys['s']) moveForward -= 1;
-            if (game.keys['a']) moveRight -= 1;
-            if (game.keys['d']) moveRight += 1;
+            
+            // Get gamepad input (use same instance from camera rotation)
+            const gamepadInputForMovement = getGamepadInput();
+            
+            if (gamepadInputForMovement) {
+                // Use gamepad input for movement (joystick takes precedence)
+                moveForward = gamepadInputForMovement.moveForward;
+                moveRight = gamepadInputForMovement.moveRight;
+            } else {
+                // Fall back to keyboard
+                if (game.keys['w']) moveForward += 1;
+                if (game.keys['s']) moveForward -= 1;
+                if (game.keys['a']) moveRight -= 1;
+                if (game.keys['d']) moveRight += 1;
+            }
             
             if (moveForward !== 0 || moveRight !== 0) {
                 const mag = Math.sqrt(moveForward * moveForward + moveRight * moveRight);
@@ -1952,8 +2853,9 @@
                 game.player.vz -= GRAVITY * deltaTime; // Gravity pulls down
             }
             
-            // Jumping with space bar
-            if (game.keys[' '] && game.player.onGround) {
+            // Jumping with space bar or gamepad button
+            const jumpPressed = game.keys[' '] || (gamepadInputForMovement && gamepadInputForMovement.jump);
+            if (jumpPressed && game.player.onGround) {
                 game.player.vz = JUMP_FORCE;
                 game.player.onGround = false;
                 soundManager.playMoveStart();
@@ -2327,6 +3229,11 @@
                 game.fps = Math.round((game.fpsCounter * 1000) / elapsed);
                 game.fpsCounter = 0;
                 game.fpsTimer = now;
+                
+                // Adjust settings based on performance (only during gameplay)
+                if (game.gameState === 'playing') {
+                    adjustSettingsForPerformance(game.fps);
+                }
             }
         }
 
@@ -2364,7 +3271,7 @@
                 let finalZ = -tempX2 * Math.sin(rollRad) + tempZ2 * Math.cos(rollRad);
                 
                 // Perspective projection
-                const fov = 70;
+                const fov = gameSettings.fov;
                 const fovScale = 1.0 / Math.tan(fov * Math.PI / 360);
                 const depth = Math.max(0.1, -finalZ);
                 
@@ -2428,8 +3335,8 @@
 
             // Doom-style raycasting renderer
             if (game.fpvMode) {
-                const FOV = 60; // Field of view in degrees
-                const MAX_DEPTH = 1000; // Maximum ray distance
+                const FOV = gameSettings.fov; // Field of view in degrees (from settings)
+                const MAX_DEPTH = gameSettings.maxDepth; // Maximum ray distance (from settings)
                 const WALL_HEIGHT = CEILING_LEVEL; // Wall height
                 const CAMERA_HEIGHT_OFFSET = CAMERA_HEIGHT;
                 
@@ -2469,7 +3376,8 @@
                     const SAMPLE_RATE = game.fps > 100 ? 3 : (game.fps > 60 ? 2 : 1); // Sample every 1-3 pixels based on FPS
                     
                     // Render blood on floor and ceiling
-                    for (let x = 0; x < canvas.width; x += SAMPLE_RATE) {
+                    const RAYCAST_SKIP_FLOOR = gameSettings.raycastSkip; // Use settings for floor rendering too
+                    for (let x = 0; x < canvas.width; x += SAMPLE_RATE * RAYCAST_SKIP_FLOOR) {
                         const cameraX = 2 * x / canvas.width - 1; // -1 to 1
                         let rayDirX = forwardX + rightX * cameraX * Math.tan(FOV * Math.PI / 360);
                         let rayDirY = forwardY + rightY * cameraX * Math.tan(FOV * Math.PI / 360);
@@ -2824,7 +3732,7 @@
                     let finalZ = tempY * Math.sin(pitchRad) + tempZ * Math.cos(pitchRad);
                     
                     // Project to screen
-                    const FOV = 60;
+                    const FOV = gameSettings.fov;
                     const fovScale = 1.0 / Math.tan(FOV * Math.PI / 360);
                     const depth = Math.max(0.1, -tempX);
                     
@@ -2872,43 +3780,82 @@
                     // Brightness based on distance
                     const brightness = Math.max(0.5, Math.min(1.0, 1.0 - sprite.distance / 500));
                     
-                    // Draw sprite as circle (Doom-style)
+                    // Draw sprite as green cube (3D isometric style)
+                    const entityHeight = entity.height || PLAYER_HEIGHT_UNITS;
+                    const cubeWidth = entityHeight / 2.0; // Cube is half the entity height
+                    const cubeSizeScreen = Math.max(5, Math.min(100, cubeWidth * (canvas.height / sprite.depth) / 2.0));
+                    
                     ctx.save();
                     ctx.globalAlpha = brightness;
                     
-                    // Draw glow
-                    const gradient = ctx.createRadialGradient(
-                        sprite.screenX, sprite.screenY, 0,
-                        sprite.screenX, sprite.screenY, spriteSize / 2
-                    );
-                    gradient.addColorStop(0, color);
-                    gradient.addColorStop(1, color + '00');
-                    ctx.fillStyle = gradient;
+                    // Calculate cube center
+                    const centerX = sprite.screenX;
+                    const centerY = sprite.screenY;
+                    const cubeSize = cubeSizeScreen;
+                    const cubeOffset = cubeSize * 0.3; // Isometric offset
+                    
+                    // All entities are green
+                    const greenColor = '#00ff00';
+                    
+                    // Draw top face (darker)
+                    const topBrightness = brightness * 0.7;
+                    ctx.fillStyle = `rgba(0, ${Math.floor(255 * topBrightness)}, 0, ${brightness})`;
                     ctx.beginPath();
-                    ctx.arc(sprite.screenX, sprite.screenY, spriteSize / 2, 0, Math.PI * 2);
+                    ctx.moveTo(centerX - cubeSize/2 - cubeOffset, centerY - cubeSize/2 - cubeOffset);
+                    ctx.lineTo(centerX + cubeSize/2 - cubeOffset, centerY - cubeSize/2 - cubeOffset);
+                    ctx.lineTo(centerX + cubeSize/2 + cubeOffset, centerY - cubeSize/2 + cubeOffset);
+                    ctx.lineTo(centerX - cubeSize/2 + cubeOffset, centerY - cubeSize/2 + cubeOffset);
+                    ctx.closePath();
                     ctx.fill();
                     
-                    // Draw sprite body
-                    const bodyGradient = ctx.createRadialGradient(
-                        sprite.screenX - spriteSize * 0.15, sprite.screenY - spriteSize * 0.15, 0,
-                        sprite.screenX, sprite.screenY, spriteSize / 2
-                    );
-                    bodyGradient.addColorStop(0, isPlayer ? '#3399ff' : '#ff3333');
-                    bodyGradient.addColorStop(1, color);
-                    ctx.fillStyle = bodyGradient;
+                    // Draw front face (brighter)
+                    ctx.fillStyle = `rgba(0, ${Math.floor(255 * brightness)}, 0, ${brightness})`;
                     ctx.beginPath();
-                    ctx.arc(sprite.screenX, sprite.screenY, spriteSize / 2, 0, Math.PI * 2);
+                    ctx.moveTo(centerX - cubeSize/2, centerY - cubeSize/2);
+                    ctx.lineTo(centerX + cubeSize/2, centerY - cubeSize/2);
+                    ctx.lineTo(centerX + cubeSize/2, centerY + cubeSize/2);
+                    ctx.lineTo(centerX - cubeSize/2, centerY + cubeSize/2);
+                    ctx.closePath();
                     ctx.fill();
-                    
-                    // Draw border
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // Draw right face (medium brightness)
+                    const rightBrightness = brightness * 0.85;
+                    ctx.fillStyle = `rgba(0, ${Math.floor(255 * rightBrightness)}, 0, ${brightness})`;
+                    ctx.beginPath();
+                    ctx.moveTo(centerX + cubeSize/2, centerY - cubeSize/2);
+                    ctx.lineTo(centerX + cubeSize/2 + cubeOffset*2, centerY - cubeSize/2 + cubeOffset*2);
+                    ctx.lineTo(centerX + cubeSize/2 + cubeOffset*2, centerY + cubeSize/2 + cubeOffset*2);
+                    ctx.lineTo(centerX + cubeSize/2, centerY + cubeSize/2);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // Draw edges
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1;
+                    // Top face edges
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - cubeSize/2 - cubeOffset, centerY - cubeSize/2 - cubeOffset);
+                    ctx.lineTo(centerX + cubeSize/2 - cubeOffset, centerY - cubeSize/2 - cubeOffset);
+                    ctx.lineTo(centerX + cubeSize/2 + cubeOffset, centerY - cubeSize/2 + cubeOffset);
+                    ctx.lineTo(centerX - cubeSize/2 + cubeOffset, centerY - cubeSize/2 + cubeOffset);
+                    ctx.closePath();
+                    ctx.stroke();
+                    // Right face edges
+                    ctx.beginPath();
+                    ctx.moveTo(centerX + cubeSize/2, centerY - cubeSize/2);
+                    ctx.lineTo(centerX + cubeSize/2 + cubeOffset*2, centerY - cubeSize/2 + cubeOffset*2);
+                    ctx.lineTo(centerX + cubeSize/2 + cubeOffset*2, centerY + cubeSize/2 + cubeOffset*2);
+                    ctx.lineTo(centerX + cubeSize/2, centerY + cubeSize/2);
+                    ctx.closePath();
                     ctx.stroke();
                     
                     ctx.restore();
                 });
             } else {
-                // 2D fallback rendering
+                // 2D fallback rendering - green cubes
                 game.entities.forEach(entity => {
                     if (!entity || entity.x === undefined || entity.y === undefined) return;
                     
@@ -2916,16 +3863,40 @@
                     if (screen.x < -100 || screen.x > canvas.width + 100 ||
                         screen.y < -100 || screen.y > canvas.height + 100) return;
 
-                    const isPlayer = entity.id === 'player';
-                    const color = isPlayer ? '#0066ff' : '#ff0000';
-                    const radius = entity.radius || (isPlayer ? PLAYER_RADIUS : NPC_RADIUS);
-
+                    const entityHeight = entity.height || PLAYER_HEIGHT_UNITS;
+                    const cubeWidth = entityHeight / 6.0;
+                    const cubeSize = Math.floor(cubeWidth);
+                    const cubeOffset = Math.floor(cubeSize * 0.3);
+                    
+                    // All entities are green
+                    const greenColor = '#00ff00';
+                    
+                    // Draw top face (darker)
+                    ctx.fillStyle = '#00cc00'; // Darker green
                     ctx.beginPath();
-                    ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
-                    ctx.fillStyle = color;
+                    ctx.moveTo(screen.x - cubeSize/2 - cubeOffset, screen.y - cubeSize/2 - cubeOffset);
+                    ctx.lineTo(screen.x + cubeSize/2 - cubeOffset, screen.y - cubeSize/2 - cubeOffset);
+                    ctx.lineTo(screen.x + cubeSize/2 + cubeOffset, screen.y - cubeSize/2 + cubeOffset);
+                    ctx.lineTo(screen.x - cubeSize/2 + cubeOffset, screen.y - cubeSize/2 + cubeOffset);
+                    ctx.closePath();
                     ctx.fill();
+                    
+                    // Draw front face
+                    ctx.fillStyle = greenColor;
+                    ctx.fillRect(screen.x - cubeSize/2, screen.y - cubeSize/2, cubeSize, cubeSize);
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 2;
+                    ctx.strokeRect(screen.x - cubeSize/2, screen.y - cubeSize/2, cubeSize, cubeSize);
+                    
+                    // Draw right face (medium brightness)
+                    ctx.fillStyle = '#00dd00';
+                    ctx.beginPath();
+                    ctx.moveTo(screen.x + cubeSize/2, screen.y - cubeSize/2);
+                    ctx.lineTo(screen.x + cubeSize/2 + cubeOffset*2, screen.y - cubeSize/2 + cubeOffset*2);
+                    ctx.lineTo(screen.x + cubeSize/2 + cubeOffset*2, screen.y + cubeSize/2 + cubeOffset*2);
+                    ctx.lineTo(screen.x + cubeSize/2, screen.y + cubeSize/2);
+                    ctx.closePath();
+                    ctx.fill();
                     ctx.stroke();
                 });
             }
@@ -2976,18 +3947,95 @@
                 }
             }
 
+            // Draw sword overlay in FPV mode
+            if (game.fpvMode && game.swordImage) {
+                renderSwordOverlay(ctx, canvas, game.swordSwingState);
+            }
+            
             // Update UI
-            document.getElementById('fps').textContent = game.fps;
+            if (gameSettings.showFPS) {
+                document.getElementById('fps').textContent = Math.round(game.fps);
+            } else {
+                document.getElementById('fps').textContent = '--';
+            }
             document.getElementById('frame').textContent = game.frame;
             document.getElementById('entities').textContent = game.entities.length;
             document.getElementById('chunks').textContent = game.maze.chunks.size;
             document.getElementById('playerPos').textContent = `(${Math.floor(game.player.x)}, ${Math.floor(game.player.y)}, ${Math.floor(game.player.z || 0)})`;
-            document.getElementById('playerHealth').textContent = game.player.health;
+            document.getElementById('playerHealth').textContent = Math.floor(game.player.health);
+            // Update health color based on value
+            const healthEl = document.getElementById('playerHealth');
+            if (healthEl) {
+                const health = game.player.health;
+                healthEl.style.color = health < 30 ? '#ff0000' : (health < 60 ? '#ffff00' : '#ffffff');
+            }
             document.getElementById('npcCount').textContent = game.entities.filter(e => e.id.startsWith('npc')).length;
             document.getElementById('cameraPos').textContent = `(${Math.floor(game.camera.x)}, ${Math.floor(game.camera.y)}, ${Math.floor(game.camera.z || 0)})`;
         }
+        
+        // Render sword overlay (like Doom weapon)
+        function renderSwordOverlay(ctx, canvas, swingState) {
+            if (!game.swordImage) return;
+            
+            // Calculate swing animation (0.0 = idle/ready, 1.0 = swing complete)
+            let xOffset, yOffset, rotation, scale;
+            
+            if (swingState <= 0.0) {
+                // Idle position: slightly to the right, angled slightly
+                xOffset = canvas.width * 0.65; // Right side of screen
+                yOffset = canvas.height * 0.7; // Lower part of screen
+                rotation = -15.0; // Slight rotation to the left
+                scale = 1.0;
+            } else {
+                // Animated swing: arc from right to left
+                const progress = Math.min(1.0, swingState);
+                
+                // Arc motion: horizontal sweep
+                if (progress < 0.5) {
+                    // First half: move left
+                    const arcProgress = progress * 2.0;
+                    xOffset = canvas.width * (0.65 - arcProgress * 0.2);
+                } else {
+                    // Second half: return right
+                    const arcProgress = (progress - 0.5) * 2.0;
+                    xOffset = canvas.width * (0.45 + arcProgress * 0.2);
+                }
+                
+                // Vertical bounce
+                const bounce = Math.abs(Math.sin(progress * Math.PI)) * 30.0;
+                yOffset = canvas.height * 0.7 - bounce;
+                
+                // Rotation during swing
+                rotation = -15.0 + (progress * 90.0) - (Math.abs(progress - 0.5) * 60.0);
+                
+                // Scale change for impact
+                scale = 1.0 + Math.abs(Math.sin(progress * Math.PI * 2)) * 0.1;
+            }
+            
+            // Apply rotation and scale
+            ctx.save();
+            ctx.translate(xOffset, yOffset);
+            ctx.rotate(rotation * Math.PI / 180);
+            ctx.scale(scale, scale);
+            
+            // Draw with slight transparency during swing
+            if (swingState > 0.0 && swingState < 1.0) {
+                const alpha = 1.0 - Math.abs(swingState - 0.5) * 0.3;
+                ctx.globalAlpha = alpha;
+            }
+            
+            // Draw sword (blade at top after 180° rotation)
+            ctx.drawImage(game.swordImage, -game.swordImage.width / 2, 0);
+            ctx.restore();
+        }
 
         function gameLoop() {
+            // Don't run game loop if not playing
+            if (game.gameState !== 'playing' && currentGameState !== 'playing') {
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+            
             // Higher target FPS for smoother gameplay (120 FPS)
             const targetFPS = 120;
             const targetFrameTime = 1000 / targetFPS; // ~8.33ms per frame
@@ -3028,13 +4076,37 @@
             requestAnimationFrame(gameLoop);
         }
 
+        let currentGameState = 'epilepsy_warning'; // epilepsy_warning, new_game, playing, game_over
+
         // Epilepsy warning handler
-        function startGame() {
-            // Hide epilepsy warning
+        function acknowledgeEpilepsyWarning() {
             const warning = document.getElementById('epilepsyWarning');
             if (warning) {
                 warning.classList.add('hidden');
             }
+            currentGameState = 'new_game';
+            showNewGameScreen();
+        }
+
+        // New game screen handler
+        function showNewGameScreen() {
+            const newGameScreen = document.getElementById('newGameScreen');
+            if (newGameScreen) {
+                newGameScreen.classList.remove('hidden');
+            }
+        }
+
+        function hideNewGameScreen() {
+            const newGameScreen = document.getElementById('newGameScreen');
+            if (newGameScreen) {
+                newGameScreen.classList.add('hidden');
+            }
+        }
+
+        function startGame() {
+            hideNewGameScreen();
+            currentGameState = 'playing';
+            game.gameState = 'playing';
 
             setTimeout(() => {
                 init();
@@ -3057,15 +4129,223 @@
             }, 500); // Small delay for visual effect
         }
 
+        function showGameOverScreen() {
+            const gameOverScreen = document.getElementById('gameOverScreen');
+            if (gameOverScreen) {
+                gameOverScreen.classList.remove('hidden');
+            }
+            currentGameState = 'game_over';
+            game.gameState = 'game_over';
+        }
+
+        function hideGameOverScreen() {
+            const gameOverScreen = document.getElementById('gameOverScreen');
+            if (gameOverScreen) {
+                gameOverScreen.classList.add('hidden');
+            }
+        }
+
+        function restartGame() {
+            hideGameOverScreen();
+            currentGameState = 'playing';
+            game.gameState = 'playing';
+            
+            // Reset player health
+            if (game.player) {
+                game.player.health = 100;
+            }
+            
+            // Reset damage cooldowns
+            game.swordDamageCooldowns = {};
+            game.npcDamageCooldowns = {};
+        }
+
         // Show epilepsy warning when page loads
         window.addEventListener('load', () => {
             const acknowledgeButton = document.getElementById('acknowledgeWarning');
             if (acknowledgeButton) {
-                acknowledgeButton.addEventListener('click', startGame);
-            } else {
-                // Fallback: if button not found, start game after delay
-                setTimeout(startGame, 1000);
+                acknowledgeButton.addEventListener('click', acknowledgeEpilepsyWarning);
             }
+
+            const startGameButton = document.getElementById('startGameButton');
+            if (startGameButton) {
+                startGameButton.addEventListener('click', startGame);
+            }
+
+            const newGameButton = document.getElementById('newGameButton');
+            if (newGameButton) {
+                newGameButton.addEventListener('click', restartGame);
+            }
+
+            const quitGameButton = document.getElementById('quitGameButton');
+            if (quitGameButton) {
+                quitGameButton.addEventListener('click', () => {
+                    alert('Game quit');
+                });
+            }
+
+            // Options screen functionality
+            const optionsButton = document.getElementById('optionsButton');
+            const optionsScreen = document.getElementById('optionsScreen');
+            const saveOptionsButton = document.getElementById('saveOptionsButton');
+            const cancelOptionsButton = document.getElementById('cancelOptionsButton');
+            const resetOptionsButton = document.getElementById('resetOptionsButton');
+            const npcCountSlider = document.getElementById('npcCountSlider');
+            const npcCountValue = document.getElementById('npcCountValue');
+            const fovSlider = document.getElementById('fovSlider');
+            const fovValue = document.getElementById('fovValue');
+            const maxDepthSlider = document.getElementById('maxDepthSlider');
+            const maxDepthValue = document.getElementById('maxDepthValue');
+            const raycastSkipSlider = document.getElementById('raycastSkipSlider');
+            const raycastSkipValue = document.getElementById('raycastSkipValue');
+            const showFPSCheckbox = document.getElementById('showFPS');
+            const enablePerformanceMonitorCheckbox = document.getElementById('enablePerformanceMonitor');
+
+            // Load settings into UI
+            function loadSettingsToUI() {
+                npcCountSlider.value = gameSettings.npcCount;
+                npcCountValue.textContent = gameSettings.npcCount;
+                fovSlider.value = gameSettings.fov;
+                fovValue.textContent = gameSettings.fov;
+                maxDepthSlider.value = gameSettings.maxDepth;
+                maxDepthValue.textContent = gameSettings.maxDepth;
+                raycastSkipSlider.value = gameSettings.raycastSkip;
+                raycastSkipValue.textContent = gameSettings.raycastSkip;
+                showFPSCheckbox.checked = gameSettings.showFPS;
+                if (enablePerformanceMonitorCheckbox) {
+                    enablePerformanceMonitorCheckbox.checked = game.performanceMonitor.enabled && localStorage.getItem('kopis_manualSettings') !== 'true';
+                }
+            }
+
+            // Update value displays as sliders change
+            npcCountSlider.addEventListener('input', (e) => {
+                npcCountValue.textContent = e.target.value;
+            });
+            fovSlider.addEventListener('input', (e) => {
+                fovValue.textContent = e.target.value;
+            });
+            maxDepthSlider.addEventListener('input', (e) => {
+                maxDepthValue.textContent = e.target.value;
+            });
+            raycastSkipSlider.addEventListener('input', (e) => {
+                raycastSkipValue.textContent = e.target.value;
+            });
+
+            function showOptionsScreen() {
+                loadSettingsToUI();
+                optionsScreen.classList.remove('hidden');
+            }
+
+            function hideOptionsScreen() {
+                optionsScreen.classList.add('hidden');
+            }
+
+            function saveSettings() {
+                gameSettings.npcCount = parseInt(npcCountSlider.value);
+                gameSettings.fov = parseInt(fovSlider.value);
+                gameSettings.maxDepth = parseInt(maxDepthSlider.value);
+                gameSettings.raycastSkip = parseInt(raycastSkipSlider.value);
+                gameSettings.showFPS = showFPSCheckbox.checked;
+                
+                // Get performance monitor setting
+                const enablePerfMonitor = enablePerformanceMonitorCheckbox ? enablePerformanceMonitorCheckbox.checked : false;
+                game.performanceMonitor.enabled = enablePerfMonitor;
+
+                // Save to localStorage
+                localStorage.setItem('kopis_npcCount', gameSettings.npcCount);
+                localStorage.setItem('kopis_fov', gameSettings.fov);
+                localStorage.setItem('kopis_maxDepth', gameSettings.maxDepth);
+                localStorage.setItem('kopis_raycastSkip', gameSettings.raycastSkip);
+                localStorage.setItem('kopis_showFPS', gameSettings.showFPS);
+                
+                if (enablePerfMonitor) {
+                    localStorage.removeItem('kopis_manualSettings'); // Allow runtime adjustment
+                } else {
+                    localStorage.setItem('kopis_manualSettings', 'true'); // Mark as manually set
+                }
+
+                hideOptionsScreen();
+            }
+            
+            function autoOptimize() {
+                // Mark that we want auto-optimization to run (but allow runtime adjustments)
+                localStorage.removeItem('kopis_manualSettings');
+                localStorage.removeItem('kopis_autoOptimized');
+                
+                // Reset performance monitor
+                game.performanceMonitor.fpsHistory = [];
+                game.performanceMonitor.lastAdjustment = 0;
+                game.performanceMonitor.enabled = true;
+                
+                // Run optimization
+                const optimized = autoOptimizeSettings();
+                if (optimized) {
+                    gameSettings = optimized;
+                    loadSettingsToUI();
+                    alert('Settings optimized for your device!\n\n' +
+                          `NPCs: ${optimized.npcCount}\n` +
+                          `FOV: ${optimized.fov}°\n` +
+                          `Render Distance: ${optimized.maxDepth}\n` +
+                          `Raycast Quality: ${optimized.raycastSkip === 1 ? 'High' : optimized.raycastSkip === 2 ? 'Medium' : 'Low'}\n\n` +
+                          'Runtime performance adjustment is enabled. Settings will adjust automatically if FPS drops.');
+                }
+            }
+
+            function resetSettings() {
+                gameSettings.npcCount = 25;
+                gameSettings.fov = 60;
+                gameSettings.maxDepth = 1000;
+                gameSettings.raycastSkip = 2;
+                gameSettings.showFPS = true;
+                localStorage.setItem('kopis_manualSettings', 'true');
+                loadSettingsToUI();
+            }
+
+            if (optionsButton) {
+                optionsButton.addEventListener('click', showOptionsScreen);
+            }
+            if (saveOptionsButton) {
+                saveOptionsButton.addEventListener('click', saveSettings);
+            }
+            if (cancelOptionsButton) {
+                cancelOptionsButton.addEventListener('click', hideOptionsScreen);
+            }
+            const autoOptimizeButton = document.getElementById('autoOptimizeButton');
+            if (autoOptimizeButton) {
+                autoOptimizeButton.addEventListener('click', autoOptimize);
+            }
+            if (resetOptionsButton) {
+                resetOptionsButton.addEventListener('click', resetSettings);
+            }
+
+            // Keyboard handlers for screens
+            document.addEventListener('keydown', (e) => {
+                if (currentGameState === 'epilepsy_warning' && (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape')) {
+                    e.preventDefault();
+                    acknowledgeEpilepsyWarning();
+                } else if (currentGameState === 'new_game') {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        startGame();
+                    } else if (e.key === 'o' || e.key === 'O') {
+                        e.preventDefault();
+                        showOptionsScreen();
+                    }
+                } else if (currentGameState === 'game_over') {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        restartGame();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        alert('Game quit');
+                    }
+                }
+                // ESC to close options screen
+                if (!optionsScreen.classList.contains('hidden') && e.key === 'Escape') {
+                    e.preventDefault();
+                    hideOptionsScreen();
+                }
+            });
         });
     </script>
 </body>

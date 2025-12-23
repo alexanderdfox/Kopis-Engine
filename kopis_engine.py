@@ -5,6 +5,32 @@ A game engine architecture based on transformer circuits with:
 - Parallel branches for multi-system processing
 - NAND gate for logical operations
 - Feedback loop for state persistence
+
+USAGE:
+    python kopis_engine.py              # Run the game with default settings
+    python kopis_engine.py --help       # Show help and options
+    
+CONTROLS:
+    W/A/S/D     - Move forward/left/backward/right (relative to camera direction)
+    SPACE       - Jump
+    Mouse       - Look around (camera rotation)
+    Left Click  - Swing sword
+    Q/E         - Roll camera (tilt left/right)
+    ESC         - Release mouse cursor
+    F11         - Toggle fullscreen
+    
+GAMEPLAY:
+    - Navigate through an infinite procedurally generated 3D maze
+    - Fight NPCs with your sword (left click or tap)
+    - Avoid NPC contact or you'll take damage (5 HP per touch)
+    - Sword deals 20 damage per hit to NPCs
+    - Each story is 10 feet tall, player is 6 feet tall
+    - Find stairs and holes to explore multiple levels
+    
+REQUIREMENTS:
+    - Python 3.7+
+    - pygame (install with: pip install pygame)
+    - Optional: torch and transformers (for advanced AI features)
 """
 
 import torch
@@ -22,13 +48,22 @@ import sys
 import select
 import tty
 import termios
+import argparse
 
 try:
     import pygame
     PYGAME_AVAILABLE = True
 except ImportError:
     PYGAME_AVAILABLE = False
-    print("Warning: pygame not available. Install with: pip install pygame")
+    print("=" * 60)
+    print("ERROR: pygame is not installed")
+    print("=" * 60)
+    print("Kopis Engine requires pygame to run.")
+    print("Please install it with:")
+    print("  pip install pygame")
+    print("\nOr using pip3:")
+    print("  pip3 install pygame")
+    print("=" * 60)
 
 
 class GameState(Enum):
@@ -108,7 +143,8 @@ class StackedTransformers:
         # Try to load shared pipeline only once if transformers are enabled
         if self.use_transformers and StackedTransformers._shared_pipeline is None:
             try:
-                print("Loading transformer model (this may take a moment)...")
+                print("    Loading transformer model (this may take 10-30 seconds)...")
+                print("    Note: First-time download may take longer (model size ~250MB)")
                 # Use CPU by default to avoid bus errors and resource conflicts
                 model_id = 'distilbert-base-uncased-finetuned-sst-2-english'
                 # Force CPU to prevent multiprocessing issues that cause bus errors
@@ -118,10 +154,10 @@ class StackedTransformers:
                     device=-1,  # Always use CPU to avoid bus errors
                     torch_dtype=torch.float32
                 )
-                print("✓ Transformer model loaded successfully (CPU mode for stability)")
+                print("    ✓ Transformer model loaded successfully (CPU mode for stability)")
             except Exception as e:
-                print(f"Warning: Could not load transformer model: {e}")
-                print("Falling back to simple processing mode")
+                print(f"    ⚠ Warning: Could not load transformer model: {e}")
+                print("    ✓ Falling back to simple processing mode (game will still work)")
                 self.use_transformers = False
                 # Clean up any partial state
                 StackedTransformers._shared_pipeline = None
@@ -885,6 +921,11 @@ class KopisEngine:
         self.last_player_pos = None
         self.npc_damage_cooldowns = {}  # Track damage cooldowns per NPC
         
+        # Sword swing state
+        self.sword_swing_state = 0.0  # 0.0 = idle, 0.0-1.0 = swing animation progress
+        self.sword_swing_speed = 8.0  # Animation speed (swings per second when active)
+        self.sword_damage_cooldowns = {}  # Track damage cooldowns per entity (prevent multiple hits per swing)
+        
         # Camera system for smooth scrolling (3D) with FPV support and 6DOF
         self.camera_pos = (0.0, 0.0, 0.0)  # (x, y, z) - 3D camera position
         self.camera_smoothness = 0.1  # Lower = smoother, higher = snappier (0.1 = smooth, 1.0 = instant)
@@ -1035,6 +1076,82 @@ class KopisEngine:
         if entity.id == 'player':
             self.player = entity
     
+    def _check_sword_damage(self, delta_time: float):
+        """Check if sword is hitting entities during swing and apply damage"""
+        if not self.player:
+            return
+        
+        import math
+        import time
+        
+        # Only apply damage during active swing (middle portion of animation for best feel)
+        swing_progress = self.sword_swing_state
+        if swing_progress < 0.2 or swing_progress > 0.8:
+            # Too early or too late in swing - no damage
+            return
+        
+        current_time = time.time()
+        player_pos = self.player.position
+        player_radius = self.player.properties.get('radius', 12.0)
+        
+        # Sword reach: extends forward from player position
+        # Calculate forward direction based on camera yaw
+        yaw_rad = math.radians(self.camera_yaw)
+        forward_x = math.sin(yaw_rad)
+        forward_y = -math.cos(yaw_rad)
+        
+        # Sword range: about 100-150 units in front of player
+        sword_range = 120.0  # units
+        sword_hit_radius = 40.0  # Wider hit radius for sword swing
+        
+        # Calculate sword tip position (in front of player)
+        sword_tip_x = player_pos[0] + forward_x * sword_range
+        sword_tip_y = player_pos[1] + forward_y * sword_range
+        sword_tip_z = player_pos[2] if len(player_pos) == 3 else 0.0
+        
+        # Check all entities for damage
+        for entity in self.entities:
+            # Skip player and already damaged entities this swing
+            if entity.id == 'player':
+                continue
+            
+            # Check cooldown (each entity can only be hit once per swing)
+            if entity.id in self.sword_damage_cooldowns:
+                continue
+            
+            # Get entity position
+            entity_pos = entity.position
+            entity_radius = entity.properties.get('radius', 8.0) if hasattr(entity, 'properties') else 8.0
+            
+            # Calculate distance from sword tip to entity center
+            dx = entity_pos[0] - sword_tip_x
+            dy = entity_pos[1] - sword_tip_y
+            dz = (entity_pos[2] if len(entity_pos) == 3 else 0.0) - sword_tip_z
+            
+            # Check if entity is in sword hit radius
+            distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+            combined_radius = sword_hit_radius + entity_radius
+            
+            if distance < combined_radius:
+                # Hit! Apply damage
+                damage = 20.0  # Sword does 20 damage per hit
+                entity.health = max(0.0, entity.health - damage)
+                
+                # Mark as damaged this swing (prevent multiple hits)
+                self.sword_damage_cooldowns[entity.id] = current_time
+                
+                # Play sound effect if available
+                if self.sound_manager:
+                    self.sound_manager.play('collision', volume=0.6)
+                
+                # Update entity in entities list
+                for i, e in enumerate(self.entities):
+                    if e.id == entity.id:
+                        self.entities[i] = entity
+                        break
+                
+                print(f"⚔ Sword hit {entity.id} for {damage} damage! ({entity.health:.1f} HP remaining)")
+    
     def _check_npc_collisions(self, delta_time: float):
         """
         Check if player is touching any NPCs and apply damage with cooldown
@@ -1112,6 +1229,30 @@ class KopisEngine:
         current_time = time.time()
         delta_time = current_time - self.last_frame_time
         self.last_frame_time = current_time
+        
+        # Update sword swing animation
+        if self.sword_swing_state > 0.0:
+            self.sword_swing_state += self.sword_swing_speed * delta_time
+            if self.sword_swing_state >= 1.0:
+                self.sword_swing_state = 0.0  # Animation complete, return to idle
+                # Reset damage cooldowns when swing completes (allow new swing to damage)
+                self.sword_damage_cooldowns = {}
+        
+        # Check for sword swing input (mouse left button or touch)
+        mouse = input_data.get('mouse', {})
+        if isinstance(mouse, dict):
+            mouse_clicked = mouse.get('clicked', False) or mouse.get('left_button', False)
+            # Also check for touch on iOS/mobile
+            touch_active = mouse.get('touch', False) or mouse.get('tap', False)
+            if (mouse_clicked or touch_active) and self.sword_swing_state == 0.0:
+                # Start sword swing animation
+                self.sword_swing_state = 0.01  # Small value to start animation
+                # Reset damage cooldowns for new swing
+                self.sword_damage_cooldowns = {}
+        
+        # Check for sword damage during swing
+        if self.sword_swing_state > 0.0 and self.sword_swing_state < 1.0:
+            self._check_sword_damage(delta_time)
         
         # Process player input for movement
         if self.player:
@@ -2230,6 +2371,23 @@ class PygameRenderer:
         self.maze = maze
         self.mouse_captured = False  # Track mouse capture state
         
+        # Initialize joysticks
+        pygame.joystick.init()
+        self.joysticks = []
+        self.joystick_deadzone = 0.15  # Dead zone to prevent drift
+        self.joystick_axis_max = 1.0
+        
+        # Detect and initialize joysticks
+        joystick_count = pygame.joystick.get_count()
+        for i in range(joystick_count):
+            joystick = pygame.joystick.Joystick(i)
+            joystick.init()
+            self.joysticks.append(joystick)
+            print(f"    ✓ Joystick {i} initialized: {joystick.get_name()}")
+        
+        if joystick_count == 0:
+            print("    ⚠ No joysticks/gamepads detected")
+        
         # Single shared Game of Life instance for all walls
         self.shared_game_of_life = GameOfLife(seed=42)  # Fixed seed so all walls use same pattern
         self.game_of_life_update_counter = 0  # Update Game of Life every N frames
@@ -2251,6 +2409,30 @@ class PygameRenderer:
         # Font
         self.font = pygame.font.Font(None, 24)
         self.small_font = pygame.font.Font(None, 18)
+        
+        # Load sword image
+        self.sword_image = None
+        try:
+            import os
+            sword_path = os.path.join(os.path.dirname(__file__), 'kopis.png')
+            if os.path.exists(sword_path):
+                self.sword_image = pygame.image.load(sword_path).convert_alpha()
+                # Scale sword to reasonable size for weapon overlay
+                # Target height: about 1/4 to 1/3 of screen height
+                original_size = self.sword_image.get_size()
+                target_height = min(200, self.height // 3)  # Max 200px or 1/3 screen height
+                scale_factor = target_height / original_size[1]
+                new_width = int(original_size[0] * scale_factor)
+                new_height = int(original_size[1] * scale_factor)
+                self.sword_image = pygame.transform.scale(self.sword_image, (new_width, new_height))
+                # Rotate 180 degrees so blade is at top (handle at bottom)
+                self.sword_image = pygame.transform.rotate(self.sword_image, 180.0)
+                print(f"✓ Loaded sword image: {sword_path} ({new_width}x{new_height}), rotated 180°")
+            else:
+                print(f"⚠ Sword image not found at {sword_path}")
+        except Exception as e:
+            print(f"⚠ Could not load sword image: {e}")
+            self.sword_image = None
     
     def toggle_fullscreen(self):
         """Toggle between fullscreen and windowed mode"""
@@ -2523,7 +2705,8 @@ class PygameRenderer:
         return None
     
     def render(self, entities: List[GameEntity], camera_pos, frame_count: int, fps: float, 
-               camera_yaw: float = 0.0, camera_pitch: float = 0.0, camera_roll: float = 0.0, fpv_mode: bool = False):
+               camera_yaw: float = 0.0, camera_pitch: float = 0.0, camera_roll: float = 0.0, fpv_mode: bool = False, 
+               sword_swing_state: float = 0.0, settings: Optional[Dict] = None):
         """Render all entities to the screen (3D with perspective, FPV support)"""
         # Clear screen
         self.screen.fill(self.BLACK)
@@ -2540,8 +2723,15 @@ class PygameRenderer:
                 # Doom-style raycasting renderer
                 import math
                 
-                FOV = 60.0  # Field of view in degrees
-                MAX_DEPTH = 1000.0  # Maximum ray distance
+                # Load settings or use defaults
+                if settings:
+                    FOV = float(settings.get('fov', 60))
+                    MAX_DEPTH = float(settings.get('max_depth', 1000))
+                    RAYCAST_SKIP = int(settings.get('raycast_skip', 2))
+                else:
+                    FOV = 60.0  # Field of view in degrees
+                    MAX_DEPTH = 1000.0  # Maximum ray distance
+                    RAYCAST_SKIP = 2
                 CEILING_LEVEL = STORY_HEIGHT_UNITS  # Ceiling height (10 feet = 300 units)
                 CAMERA_HEIGHT_OFFSET = PLAYER_HEIGHT_UNITS * 0.833  # Eye level (5 feet = 150 units, ~83% of 6 feet)
                 
@@ -2649,8 +2839,11 @@ class PygameRenderer:
                                                             max(1, int(cell_h * floor_sample_rate))))
                 
                 # Raycast for each column
-                # Adaptive quality: skip columns for higher FPS
-                raycast_skip = 1 if fps < 60 else (2 if fps < 100 else 3)  # Skip 1-3 columns based on FPS
+                # Use settings if available, otherwise adaptive quality
+                if settings:
+                    raycast_skip = int(settings.get('raycast_skip', 2))
+                else:
+                    raycast_skip = 1 if fps < 60 else (2 if fps < 100 else 3)  # Skip 1-3 columns based on FPS
                 cell_size = self.maze.cell_size
                 ray_results = []
                 
@@ -2924,7 +3117,11 @@ class PygameRenderer:
                 final_z = temp_y * math.sin(pitch_rad) + temp_z * math.cos(pitch_rad)
                 
                 # Project to screen
-                FOV = 60.0
+                # Use settings for FOV if available
+                if settings:
+                    FOV = float(settings.get('fov', 60))
+                else:
+                    FOV = 60.0
                 fov_scale = 1.0 / math.tan(math.radians(FOV / 2.0))
                 depth = max(0.1, -temp_x)
                 
@@ -3095,6 +3292,10 @@ class PygameRenderer:
         # Draw UI overlay
         self._draw_ui(camera_pos, frame_count, fps, len(entities), camera_yaw, camera_pitch, fpv_mode)
         
+        # Draw sword overlay in FPV mode
+        if fpv_mode and self.sword_image:
+            self._render_sword_overlay(sword_swing_state)
+        
         # Update display
         pygame.display.flip()
         # Higher target FPS (120 FPS) - tick() without argument allows unlimited FPS
@@ -3135,6 +3336,84 @@ class PygameRenderer:
             text_surface = self.small_font.render(text, True, self.WHITE)
             self.screen.blit(text_surface, (15, y_offset))
             y_offset += 20
+    
+    def _render_sword_overlay(self, swing_state: float = 0.0):
+        """Render sword as weapon overlay in first-person view (like Doom weapon)"""
+        if not self.sword_image:
+            return
+        
+        import math
+        
+        # Calculate swing animation (0.0 = idle/ready, 1.0 = swing complete)
+        # Swing from right to left with rotation
+        if swing_state <= 0.0:
+            # Idle position: slightly to the right, angled slightly
+            x_offset = self.width * 0.65  # Right side of screen
+            y_offset = self.height * 0.7  # Lower part of screen
+            rotation = -15.0  # Slight rotation to the left (counter-clockwise)
+            scale = 1.0
+        else:
+            # Animated swing: arc from right to left
+            # Swing progress: 0.0 to 1.0
+            progress = min(1.0, swing_state)
+            
+            # Arc motion: horizontal sweep
+            # X moves from right (0.65) to center (0.5) and back
+            if progress < 0.5:
+                # First half: move left
+                arc_progress = progress * 2.0  # 0.0 to 1.0
+                x_offset = self.width * (0.65 - arc_progress * 0.2)  # Move from 0.65 to 0.45
+            else:
+                # Second half: return right
+                arc_progress = (progress - 0.5) * 2.0  # 0.0 to 1.0
+                x_offset = self.width * (0.45 + arc_progress * 0.2)  # Return from 0.45 to 0.65
+            
+            # Vertical bounce: slight upward motion during swing
+            bounce = abs(math.sin(progress * math.pi)) * 30.0  # Up to 30 pixels bounce
+            y_offset = self.height * 0.7 - bounce
+            
+            # Rotation: sword rotates during swing (chopping motion)
+            rotation = -15.0 + (progress * 90.0) - (abs(progress - 0.5) * 60.0)  # Rotates through swing
+            
+            # Scale: slight scale change for impact effect
+            scale = 1.0 + abs(math.sin(progress * math.pi * 2)) * 0.1  # 10% scale change
+        
+        # Rotate and scale the sword image
+        if rotation != 0.0 or scale != 1.0:
+            # Scale first
+            if scale != 1.0:
+                original_size = self.sword_image.get_size()
+                new_size = (int(original_size[0] * scale), int(original_size[1] * scale))
+                scaled_image = pygame.transform.scale(self.sword_image, new_size)
+            else:
+                scaled_image = self.sword_image
+            
+            # Rotate (blade at top after 180° rotation, so rotation center should be near top)
+            if rotation != 0.0:
+                rotated_image = pygame.transform.rotate(scaled_image, rotation)
+            else:
+                rotated_image = scaled_image
+        else:
+            rotated_image = self.sword_image
+        
+        # Get image rect and position (blade at top after 180° rotation)
+        img_rect = rotated_image.get_rect()
+        # Position so blade is at the specified offset (top of image is blade after rotation)
+        screen_x = int(x_offset - img_rect.width / 2)
+        screen_y = int(y_offset)  # Top of image (blade) at this y position
+        
+        # Draw sword with slight transparency during swing for effect
+        if swing_state > 0.0 and swing_state < 1.0:
+            # Slight fade during swing
+            alpha = int(255 * (1.0 - abs(swing_state - 0.5) * 0.3))  # Up to 15% transparency at midpoint
+            rotated_image.set_alpha(alpha)
+        
+        # Blit the sword
+        self.screen.blit(rotated_image, (screen_x, screen_y))
+        
+        # Reset alpha if it was changed
+        if swing_state > 0.0:
+            rotated_image.set_alpha(255)
     
     def get_input(self, fpv_mode: bool = False) -> Dict[str, Any]:
         """Get input from pygame events (3D with jumping and mouse look)"""
@@ -3192,6 +3471,15 @@ class PygameRenderer:
                     self._prev_mouse_pos = mouse_pos
             
             if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left mouse button
+                    mouse_clicked = True
+                # Clicking in FPV mode can also capture mouse if not already captured
+                if fpv_mode and not self.mouse_captured:
+                    pygame.mouse.set_visible(False)
+                    pygame.event.set_grab(True)
+                    self.mouse_captured = True
+                    pygame.mouse.set_pos(self.width // 2, self.height // 2)
+            elif event.type == pygame.FINGERDOWN:  # Touch event for iOS/mobile
                 mouse_clicked = True
                 # Clicking in FPV mode can also capture mouse if not already captured
                 if fpv_mode and not self.mouse_captured:
@@ -3222,15 +3510,134 @@ class PygameRenderer:
         keys_pressed['q'] = keys[pygame.K_q]  # Roll left (6DOF)
         keys_pressed['e'] = keys[pygame.K_e]  # Roll right (6DOF)
         
+        # Joystick input (gamepad support)
+        joystick_move_forward = 0.0
+        joystick_move_right = 0.0
+        joystick_camera_dx = 0.0
+        joystick_camera_dy = 0.0
+        joystick_jump = False
+        joystick_sword = False
+        joystick_roll_left = False
+        joystick_roll_right = False
+        
+        # Use first joystick if available
+        if len(self.joysticks) > 0:
+            joy = self.joysticks[0]
+            num_axes = joy.get_numaxes()
+            num_buttons = joy.get_numbuttons()
+            
+            # Left stick: movement (axis 0 = horizontal, axis 1 = vertical)
+            # Right stick: camera (axis 2/3 or axis 4/5 depending on controller)
+            if num_axes >= 2:
+                # Left stick horizontal (strafe left/right)
+                axis_0 = joy.get_axis(0)
+                if abs(axis_0) > self.joystick_deadzone:
+                    joystick_move_right = axis_0
+                
+                # Left stick vertical (forward/backward) - inverted
+                axis_1 = joy.get_axis(1)
+                if abs(axis_1) > self.joystick_deadzone:
+                    joystick_move_forward = -axis_1  # Invert for forward when pushed up
+            
+            # Right stick: camera rotation
+            # Xbox controller: axes 3 (horizontal) and 4 (vertical)
+            # PS4 controller: axes 2 (horizontal) and 3 (vertical)
+            if num_axes >= 4:
+                # Try Xbox layout first (axes 3 and 4)
+                axis_3 = joy.get_axis(3) if num_axes > 3 else 0.0
+                axis_4 = joy.get_axis(4) if num_axes > 4 else 0.0
+                
+                # Also try PS4 layout (axes 2 and 3)
+                axis_2 = joy.get_axis(2) if num_axes > 2 else 0.0
+                
+                # Use the axis with more movement (detect which layout)
+                if abs(axis_3) > abs(axis_2):
+                    # Xbox layout
+                    if abs(axis_3) > self.joystick_deadzone:
+                        joystick_camera_dx = axis_3 * 2.0  # Scale for sensitivity
+                    if abs(axis_4) > self.joystick_deadzone:
+                        joystick_camera_dy = -axis_4 * 2.0  # Invert and scale
+                else:
+                    # PS4 layout
+                    if abs(axis_2) > self.joystick_deadzone:
+                        joystick_camera_dx = axis_2 * 2.0
+                    if abs(axis_3) > self.joystick_deadzone:
+                        joystick_camera_dy = -axis_3 * 2.0
+            
+            # Buttons: Xbox mapping
+            # Button 0 = A (jump)
+            # Button 1 = B
+            # Button 2 = X
+            # Button 3 = Y
+            # Button 4 = Left Bumper (L1)
+            # Button 5 = Right Bumper (R1)
+            # Button 6 = Back/Select
+            # Button 7 = Start
+            # Button 8 = Left Stick Press
+            # Button 9 = Right Stick Press
+            # Triggers: axes 4 and 5 (or 2 and 3 on some controllers)
+            
+            if num_buttons >= 1:
+                # Jump (A button, typically button 0)
+                joystick_jump = joy.get_button(0)
+            
+            # Sword swing: Right trigger (axis 5) or X button (button 2)
+            if num_axes >= 6:
+                trigger = joy.get_axis(5)
+                if trigger > 0.5:  # Trigger pressed more than halfway
+                    joystick_sword = True
+            if num_buttons >= 3:
+                if joy.get_button(2):  # X button
+                    joystick_sword = True
+            
+            # Roll: Shoulder buttons (L1 = button 4, R1 = button 5)
+            if num_buttons >= 5:
+                joystick_roll_left = joy.get_button(4)  # Left bumper
+                joystick_roll_right = joy.get_button(5)  # Right bumper
+        
+        # Combine joystick and keyboard input (joystick takes precedence for movement)
+        if abs(joystick_move_forward) > 0.01 or abs(joystick_move_right) > 0.01:
+            # Joystick movement overrides keyboard
+            keys_pressed['w'] = joystick_move_forward > 0.1
+            keys_pressed['s'] = joystick_move_forward < -0.1
+            keys_pressed['a'] = joystick_move_right < -0.1
+            keys_pressed['d'] = joystick_move_right > 0.1
+        
+        if joystick_jump:
+            keys_pressed['space'] = True
+        
+        if joystick_sword:
+            mouse_clicked = True
+        
+        if joystick_roll_left:
+            keys_pressed['q'] = True
+        if joystick_roll_right:
+            keys_pressed['e'] = True
+        
+        # Combine mouse and joystick camera input
+        final_mouse_dx = mouse_delta[0] + joystick_camera_dx * 0.15  # Scale joystick sensitivity
+        final_mouse_dy = mouse_delta[1] + joystick_camera_dy * 0.15
+        
         return {
             'quit': quit_requested,
             'keys': keys_pressed,
             'mouse': {
                 'x': mouse_pos[0], 
                 'y': mouse_pos[1], 
-                'dx': mouse_delta[0],  # Mouse delta X for camera yaw
-                'dy': mouse_delta[1],  # Mouse delta Y for camera pitch
-                'clicked': mouse_clicked
+                'dx': final_mouse_dx,  # Combined mouse + joystick delta X for camera yaw
+                'dy': final_mouse_dy,  # Combined mouse + joystick delta Y for camera pitch
+                'clicked': mouse_clicked,
+                'left_button': mouse_clicked,  # Alias for compatibility
+                'touch': mouse_clicked,  # For iOS/mobile touch events
+                'tap': mouse_clicked  # Alternative name for tap
+            },
+            'joystick': {
+                'move_forward': joystick_move_forward,
+                'move_right': joystick_move_right,
+                'camera_dx': joystick_camera_dx,
+                'camera_dy': joystick_camera_dy,
+                'jump': joystick_jump,
+                'sword': joystick_sword
             }
         }
     
@@ -3245,31 +3652,71 @@ class PygameRenderer:
 
 
 def main():
-    """Interactive game loop with pygame visualization, maze, and sound effects"""
+    """
+    Interactive game loop with pygame visualization, maze, and sound effects
+    
+    This is the main entry point for the Kopis Engine game.
+    It initializes all systems and runs the game loop.
+    """
+    # Check dependencies
     if not PYGAME_AVAILABLE:
-        print("Error: pygame is required for visualization.")
-        print("Install with: pip install pygame")
-        return
+        print("\n" + "=" * 60)
+        print("ERROR: pygame is required but not installed")
+        print("=" * 60)
+        print("Kopis Engine needs pygame to run.")
+        print("Please install it with one of these commands:")
+        print("  pip install pygame")
+        print("  pip3 install pygame")
+        print("  python -m pip install pygame")
+        print("\nAfter installing, run the game again.")
+        print("=" * 60 + "\n")
+        sys.exit(1)
     
-    # Create infinite maze
-    print("Initializing infinite maze system...")
-    maze = Maze(chunk_size=20, cell_size=50.0, load_radius=3)
-    print(f"✓ Infinite maze system initialized (chunks loaded on demand)")
+    # Initialize systems with progress feedback
+    print("\n" + "=" * 60)
+    print("KOPIS ENGINE - Initializing...")
+    print("=" * 60)
     
-    # Initialize sound manager
-    print("Initializing sound system...")
+    print("\n[1/4] Creating infinite maze system...")
+    try:
+        maze = Maze(chunk_size=20, cell_size=50.0, load_radius=3)
+        print("    ✓ Infinite maze system initialized")
+        print("    ✓ Chunks will be generated on-demand as you explore")
+    except Exception as e:
+        print(f"    ✗ Error initializing maze: {e}")
+        print("    The game may not work correctly.")
+        sys.exit(1)
+    
+    print("\n[2/4] Initializing sound system...")
     sound_manager = SoundManager()
     if sound_manager.enabled:
-        print("✓ Sound system initialized")
+        print("    ✓ Sound system initialized")
+        print("    ✓ Sound effects will play during gameplay")
     else:
-        print("⚠ Sound system unavailable")
+        print("    ⚠ Sound system unavailable (game will run without sound)")
     
-    # Initialize engine with maze and sound
-    engine = KopisEngine(maze=maze, sound_manager=sound_manager)
-    engine.visualize_circuit()
+    print("\n[3/4] Initializing game engine...")
+    try:
+        engine = KopisEngine(maze=maze, sound_manager=sound_manager)
+        engine.visualize_circuit()
+        print("    ✓ Game engine initialized")
+        print("    ✓ All systems ready")
+    except Exception as e:
+        print(f"    ✗ Error initializing engine: {e}")
+        sys.exit(1)
     
-    # Initialize pygame renderer with maze
-    renderer = PygameRenderer(width=800, height=600, maze=maze)
+    print("\n[4/4] Setting up graphics renderer...")
+    try:
+        renderer = PygameRenderer(width=800, height=600, maze=maze)
+        print("    ✓ Graphics renderer initialized")
+        print("    ✓ Window created (800x600)")
+    except Exception as e:
+        print(f"    ✗ Error initializing renderer: {e}")
+        sys.exit(1)
+    
+    print("\n" + "=" * 60)
+    print("INITIALIZATION COMPLETE!")
+    print("=" * 60)
     
     # Show epilepsy warning before starting game
     def show_epilepsy_warning():
@@ -3378,16 +3825,32 @@ def main():
             button_font = pygame.font.SysFont('arial', 48, bold=True)
         
         acknowledged = False
+        settings = None
         
         while not acknowledged:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    return False
+                    return False, None
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
                         acknowledged = True
+                    elif event.key == pygame.K_o or event.key == pygame.K_O:
+                        # Show options screen
+                        options_result = show_options_screen()
+                        if options_result[0]:  # User didn't quit
+                            if options_result[1]:  # Settings were saved
+                                settings = options_result[1]
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    acknowledged = True
+                    mouse_pos = pygame.mouse.get_pos()
+                    # Check if clicking on options button
+                    options_button_rect = pygame.Rect(renderer.width // 2 - 100, renderer.height - 120, 200, 40)
+                    if options_button_rect.collidepoint(mouse_pos):
+                        options_result = show_options_screen()
+                        if options_result[0]:  # User didn't quit
+                            if options_result[1]:  # Settings were saved
+                                settings = options_result[1]
+                    else:
+                        acknowledged = True
             
             # Clear screen with dark background
             new_game_screen.fill(DARK_BG)
@@ -3419,21 +3882,246 @@ def main():
                     new_game_screen.blit(text, text_rect)
                 y_offset += 45
             
-            # Button
-            button_text = button_font.render("Press ENTER, SPACE, or CLICK to Start", True, WHITE)
-            button_rect = button_text.get_rect(center=(renderer.width // 2, renderer.height - 150))
+            # Buttons
+            start_button_text = button_font.render("Press ENTER, SPACE, or CLICK to Start", True, WHITE)
+            start_button_rect = start_button_text.get_rect(center=(renderer.width // 2, renderer.height - 200))
+            start_button_bg_rect = pygame.Rect(start_button_rect.x - 20, start_button_rect.y - 10, 
+                                              start_button_rect.width + 40, start_button_rect.height + 20)
+            pygame.draw.rect(new_game_screen, DARK_GREEN, start_button_bg_rect)
+            pygame.draw.rect(new_game_screen, GREEN, start_button_bg_rect, 3)
+            new_game_screen.blit(start_button_text, start_button_rect)
             
-            # Draw button background
-            button_bg_rect = pygame.Rect(button_rect.x - 20, button_rect.y - 10, 
-                                        button_rect.width + 40, button_rect.height + 20)
-            pygame.draw.rect(new_game_screen, DARK_GREEN, button_bg_rect)
-            pygame.draw.rect(new_game_screen, GREEN, button_bg_rect, 3)
-            new_game_screen.blit(button_text, button_rect)
+            # Options button
+            options_button_text = pygame.font.Font(None, 36).render("OPTIONS (O)", True, WHITE)
+            options_button_rect = options_button_text.get_rect(center=(renderer.width // 2, renderer.height - 120))
+            options_button_bg_rect = pygame.Rect(options_button_rect.x - 15, options_button_rect.y - 8, 
+                                                options_button_rect.width + 30, options_button_rect.height + 16)
+            pygame.draw.rect(new_game_screen, (80, 80, 120), options_button_bg_rect)
+            pygame.draw.rect(new_game_screen, (120, 120, 180), options_button_bg_rect, 3)
+            new_game_screen.blit(options_button_text, options_button_rect)
             
             pygame.display.flip()
             clock.tick(60)
         
-        return True
+        return True, settings
+    
+    def show_options_screen():
+        """Display options screen with settings"""
+        options_screen = renderer.screen
+        clock = pygame.time.Clock()
+        
+        # Colors
+        BLUE = (91, 155, 213)
+        DARK_BLUE = (15, 52, 96)
+        CYAN = (0, 212, 255)
+        WHITE = (255, 255, 255)
+        DARK_BG = (26, 26, 46)
+        GREEN = (68, 255, 68)
+        DARK_GREEN = (0, 204, 0)
+        
+        # Create fonts
+        try:
+            title_font = pygame.font.Font(None, 72)
+            text_font = pygame.font.Font(None, 36)
+            small_font = pygame.font.Font(None, 24)
+            button_font = pygame.font.Font(None, 48)
+        except:
+            title_font = pygame.font.SysFont('arial', 72, bold=True)
+            text_font = pygame.font.SysFont('arial', 36)
+            small_font = pygame.font.SysFont('arial', 24)
+            button_font = pygame.font.SysFont('arial', 48, bold=True)
+        
+        # Default settings
+        settings = {
+            'npc_count': 25,
+            'fov': 60,
+            'max_depth': 1000,
+            'raycast_skip': 2
+        }
+        
+        # Try to load from file
+        settings_file = 'kopis_settings.json'
+        try:
+            import json
+            import os
+            if os.path.exists(settings_file):
+                with open(settings_file, 'r') as f:
+                    loaded_settings = json.load(f)
+                    settings.update(loaded_settings)
+        except Exception as e:
+            print(f"Could not load settings: {e}")
+        
+        # Slider positions and ranges
+        slider_y_start = 200
+        slider_spacing = 80
+        slider_width = 400
+        slider_height = 30
+        slider_x = renderer.width // 2 - slider_width // 2
+        
+        selected_setting = None
+        settings_keys = ['npc_count', 'fov', 'max_depth', 'raycast_skip']
+        setting_labels = {
+            'npc_count': ('NPC Count', 5, 50, 5),
+            'fov': ('Field of View (FOV)', 45, 110, 5),
+            'max_depth': ('Max Render Distance', 500, 2000, 100),
+            'raycast_skip': ('Raycast Skip (Performance)', 1, 4, 1)
+        }
+        
+        def get_slider_value(key):
+            """Get slider value (0-1) for a setting"""
+            min_val, max_val, step = setting_labels[key][1], setting_labels[key][2], setting_labels[key][3]
+            current = settings[key]
+            return (current - min_val) / (max_val - min_val)
+        
+        def set_slider_value(key, value_01):
+            """Set setting from slider value (0-1)"""
+            min_val, max_val, step = setting_labels[key][1], setting_labels[key][2], setting_labels[key][3]
+            raw_val = min_val + value_01 * (max_val - min_val)
+            # Round to nearest step
+            settings[key] = int(round(raw_val / step) * step)
+        
+        running = True
+        saved = False
+        
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False, None
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                        # Save settings
+                        try:
+                            import json
+                            with open(settings_file, 'w') as f:
+                                json.dump(settings, f, indent=2)
+                            saved = True
+                        except Exception as e:
+                            print(f"Could not save settings: {e}")
+                        running = False
+                        break
+                    elif event.key == pygame.K_ESCAPE:
+                        # Cancel without saving
+                        running = False
+                        break
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mouse_pos = pygame.mouse.get_pos()
+                    mx, my = mouse_pos
+                    
+                    # Check if clicking on a slider
+                    for i, key in enumerate(settings_keys):
+                        slider_y = slider_y_start + i * slider_spacing
+                        if (slider_x <= mx <= slider_x + slider_width and
+                            slider_y - 10 <= my <= slider_y + slider_height + 10):
+                            selected_setting = key
+                            # Update value based on mouse X
+                            rel_x = (mx - slider_x) / slider_width
+                            rel_x = max(0.0, min(1.0, rel_x))
+                            set_slider_value(key, rel_x)
+                            break
+                    
+                    # Check buttons
+                    save_button_rect = pygame.Rect(renderer.width // 2 - 200, renderer.height - 200, 180, 50)
+                    cancel_button_rect = pygame.Rect(renderer.width // 2 + 20, renderer.height - 200, 180, 50)
+                    reset_button_rect = pygame.Rect(renderer.width // 2 - 90, renderer.height - 130, 180, 50)
+                    
+                    if save_button_rect.collidepoint(mouse_pos):
+                        try:
+                            import json
+                            with open(settings_file, 'w') as f:
+                                json.dump(settings, f, indent=2)
+                            saved = True
+                        except Exception as e:
+                            print(f"Could not save settings: {e}")
+                        running = False
+                        break
+                    elif cancel_button_rect.collidepoint(mouse_pos):
+                        running = False
+                        break
+                    elif reset_button_rect.collidepoint(mouse_pos):
+                        settings = {
+                            'npc_count': 25,
+                            'fov': 60,
+                            'max_depth': 1000,
+                            'raycast_skip': 2
+                        }
+                
+                if event.type == pygame.MOUSEMOTION and selected_setting:
+                    # Update slider while dragging
+                    mx, my = event.pos
+                    rel_x = (mx - slider_x) / slider_width
+                    rel_x = max(0.0, min(1.0, rel_x))
+                    set_slider_value(selected_setting, rel_x)
+                
+                if event.type == pygame.MOUSEBUTTONUP:
+                    selected_setting = None
+            
+            # Clear screen
+            options_screen.fill(DARK_BG)
+            
+            # Draw border
+            pygame.draw.rect(options_screen, BLUE, (50, 50, renderer.width - 100, renderer.height - 100), 5)
+            
+            # Title
+            title_text = title_font.render("OPTIONS", True, BLUE)
+            title_rect = title_text.get_rect(center=(renderer.width // 2, 120))
+            options_screen.blit(title_text, title_rect)
+            
+            # Draw sliders and labels
+            for i, key in enumerate(settings_keys):
+                slider_y = slider_y_start + i * slider_spacing
+                label, min_val, max_val, step = setting_labels[key]
+                
+                # Label
+                label_text = text_font.render(f"{label}: {settings[key]}", True, WHITE)
+                label_rect = label_text.get_rect(left=slider_x, bottom=slider_y - 15)
+                options_screen.blit(label_text, label_rect)
+                
+                # Slider track
+                pygame.draw.rect(options_screen, DARK_BLUE, (slider_x, slider_y, slider_width, slider_height))
+                pygame.draw.rect(options_screen, BLUE, (slider_x, slider_y, slider_width, slider_height), 2)
+                
+                # Slider thumb
+                slider_value = get_slider_value(key)
+                thumb_x = slider_x + int(slider_value * slider_width)
+                thumb_rect = pygame.Rect(thumb_x - 10, slider_y - 5, 20, slider_height + 10)
+                pygame.draw.rect(options_screen, CYAN, thumb_rect)
+                pygame.draw.rect(options_screen, BLUE, thumb_rect, 2)
+            
+            # Buttons
+            save_button_rect = pygame.Rect(renderer.width // 2 - 200, renderer.height - 200, 180, 50)
+            cancel_button_rect = pygame.Rect(renderer.width // 2 + 20, renderer.height - 200, 180, 50)
+            reset_button_rect = pygame.Rect(renderer.width // 2 - 90, renderer.height - 130, 180, 50)
+            
+            pygame.draw.rect(options_screen, DARK_GREEN, save_button_rect)
+            pygame.draw.rect(options_screen, GREEN, save_button_rect, 3)
+            save_text = button_font.render("SAVE", True, WHITE)
+            save_text_rect = save_text.get_rect(center=save_button_rect.center)
+            options_screen.blit(save_text, save_text_rect)
+            
+            pygame.draw.rect(options_screen, (100, 100, 100), cancel_button_rect)
+            pygame.draw.rect(options_screen, (150, 150, 150), cancel_button_rect, 3)
+            cancel_text = button_font.render("CANCEL", True, WHITE)
+            cancel_text_rect = cancel_text.get_rect(center=cancel_button_rect.center)
+            options_screen.blit(cancel_text, cancel_text_rect)
+            
+            pygame.draw.rect(options_screen, (80, 80, 80), reset_button_rect)
+            pygame.draw.rect(options_screen, (120, 120, 120), reset_button_rect, 3)
+            reset_text = small_font.render("RESET DEFAULTS", True, WHITE)
+            reset_text_rect = reset_text.get_rect(center=reset_button_rect.center)
+            options_screen.blit(reset_text, reset_text_rect)
+            
+            # Instructions
+            instr_text = small_font.render("Click and drag sliders to adjust. Press ENTER/SPACE to save, ESC to cancel", True, (150, 150, 150))
+            instr_rect = instr_text.get_rect(center=(renderer.width // 2, renderer.height - 50))
+            options_screen.blit(instr_text, instr_rect)
+            
+            pygame.display.flip()
+            clock.tick(60)
+        
+        if saved:
+            return True, settings
+        else:
+            return True, None  # Return None if cancelled
     
     def show_game_over_screen():
         """Display game over screen with new game option"""
@@ -3528,18 +4216,52 @@ def main():
         return choice
     
     # Show warning and check if user wants to continue
+    print("\nShowing epilepsy warning screen...")
     if not show_epilepsy_warning():
-        print("Game cancelled by user")
+        print("\nGame cancelled by user during epilepsy warning.")
         return
     
-    # Show new game screen
-    if not show_new_game_screen():
-        print("Game cancelled by user")
+    # Show new game screen and get settings
+    print("Showing new game screen...")
+    new_game_result = show_new_game_screen()
+    if not new_game_result[0]:
+        print("\nGame cancelled by user during new game screen.")
         return
+    
+    # Load settings (from options screen or defaults)
+    settings = new_game_result[1]
+    if settings is None:
+        # Load from file or use defaults
+        settings_file = 'kopis_settings.json'
+        try:
+            import json
+            import os
+            if os.path.exists(settings_file):
+                with open(settings_file, 'r') as f:
+                    settings = json.load(f)
+            else:
+                settings = {
+                    'npc_count': 25,
+                    'fov': 60,
+                    'max_depth': 1000,
+                    'raycast_skip': 2
+                }
+        except Exception as e:
+            print(f"Could not load settings, using defaults: {e}")
+            settings = {
+                'npc_count': 25,
+                'fov': 60,
+                'max_depth': 1000,
+                'raycast_skip': 2
+            }
+    
+    print(f"    ✓ Loaded settings: NPCs={settings.get('npc_count', 25)}, FOV={settings.get('fov', 60)}, MaxDepth={settings.get('max_depth', 1000)}")
     
     # Find a valid starting position in the maze (on a path) - RANDOM
     import random
+    import math
     
+    print("\nFinding safe starting position for player...")
     # First, ensure chunks are loaded around origin
     maze._ensure_chunks_loaded((0.0, 0.0))
     
@@ -3579,10 +4301,10 @@ def main():
     if valid_positions:
         start_world = random.choice(valid_positions)
         start_cell = maze.world_to_cell(start_world)
-        print(f"✓ Found {len(valid_positions)} valid starting positions, selected random position")
+        print(f"    ✓ Found {len(valid_positions)} valid starting positions, selected random position")
     else:
         # Fallback: try more aggressive search
-        print("⚠ No valid positions found in initial search, trying fallback...")
+        print("    ⚠ No valid positions found in initial search, trying fallback...")
         fallback_positions = []
         for cell_x in range(-30, 31):
             for cell_y in range(-30, 31):
@@ -3594,10 +4316,10 @@ def main():
         if fallback_positions:
             start_world = random.choice(fallback_positions)
             start_cell = maze.world_to_cell(start_world)
-            print(f"✓ Found {len(fallback_positions)} fallback positions, selected random position")
+            print(f"    ✓ Found {len(fallback_positions)} fallback positions, selected random position")
         else:
             # Final safety: try random positions
-            print("⚠ Using random position search as last resort")
+            print("    ⚠ Using random position search as last resort")
             start_world = (0.0, 0.0)
             for attempts in range(100):
                 random_x = (random.random() - 0.5) * 1000
@@ -3611,7 +4333,7 @@ def main():
     player_radius = 12.0
     safety_margin = 5.0
     if maze.check_collision(start_world, player_radius):
-        print("⚠ Warning: Starting position may be in wall, attempting to find safe position...")
+        print("    ⚠ Warning: Starting position may be in wall, attempting to find safe position...")
         # Try to find any safe position with extra margin
         for attempts in range(200):
             test_x = (random.random() - 0.5) * 2000
@@ -3623,10 +4345,11 @@ def main():
                 if maze.is_path_cell(test_cell):
                     start_world = (test_x, test_y)
                     start_cell = maze.world_to_cell(start_world)
-                    print(f"✓ Found safe position at ({test_x:.1f}, {test_y:.1f})")
+                    print(f"    ✓ Found safe starting position at ({test_x:.1f}, {test_y:.1f})")
                     break
     
     # Create player entity at valid maze position
+    print("\nCreating player entity...")
     player = GameEntity(
         id='player',
         position=(start_world[0], start_world[1], 0.0),  # 3D position (Z starts at ground)
@@ -3637,9 +4360,12 @@ def main():
             'affected_by_gravity': True,  # Player affected by gravity for jumping
             'radius': 12.0,  # Player collision radius
             'on_ground': True  # Start on ground
-        }
+        },
+        height=PLAYER_HEIGHT_UNITS  # 6 feet = 180 units
     )
     engine.add_entity(player)
+    print(f"    ✓ Player created at position ({start_world[0]:.1f}, {start_world[1]:.1f}, 0.0)")
+    print(f"    ✓ Player health: {player.health} HP")
     
     # Find a nearby wall and set camera to look at it
     import math
@@ -3707,61 +4433,41 @@ def main():
         # Normalize to 0-360 range
         camera_yaw = camera_yaw % 360.0
         engine.camera_yaw = camera_yaw
-        print(f"✓ Set initial camera to look at wall at ({wall_x:.1f}, {wall_y:.1f}), yaw: {camera_yaw:.1f}°")
+        print(f"    ✓ Set initial camera to look at wall (yaw: {camera_yaw:.1f}°)")
     else:
         # Fallback: look in a random direction, rotated by 180 degrees
         engine.camera_yaw = (random.uniform(0, 360) + 180.0) % 360.0
-        print(f"⚠ No nearby wall found, set random camera yaw: {engine.camera_yaw:.1f}°")
+        print(f"    ⚠ No nearby wall found, using random camera angle")
     
-    # Create many NPCs at different valid positions near the start
-    # Performance optimized: can handle many NPCs with staggered pathfinding
-    MAX_NPCS = 25  # Reduced from 50 to 25 for better FPS with Game of Life rendering
+    # Create many NPCs at different valid positions within 10 seconds distance at 60fps
+    # Player speed = 200.0 units/second, so 10 seconds = 2000 units max distance
+    # Spawn NPCs at various distances up to 2000 units
+    print("\nSpawning NPCs...")
+    MAX_NPCS = settings.get('npc_count', 25)  # Load from settings
+    MAX_SPAWN_DISTANCE = 2000.0  # 10 seconds * 200 units/second = 2000 units
+    MIN_SPAWN_DISTANCE = 200.0  # Minimum distance to avoid crowding
+    npc_count = 0
+    
     for i in range(MAX_NPCS):
-        # Find a nearby path cell for NPC
-        npc_offset = (i + 1) * 3  # Space NPCs out
-        npc_cell = (start_cell[0] + npc_offset, start_cell[1])
+        # Use random angle and distance for varied spawn positions
+        angle = (i / MAX_NPCS) * 2 * math.pi + random.uniform(0, 0.5)  # Add some randomness
+        # Distance ranges from MIN_SPAWN_DISTANCE to MAX_SPAWN_DISTANCE (within 10 second travel time)
+        dist = MIN_SPAWN_DISTANCE + random.uniform(0, MAX_SPAWN_DISTANCE - MIN_SPAWN_DISTANCE)
         
-        # Ensure chunk is loaded
+        # Calculate spawn position in world coordinates
+        npc_world_target = (start_world[0] + math.cos(angle) * dist, 
+                           start_world[1] + math.sin(angle) * dist)
+        
+        # Find nearest path cell for NPC at this position
+        npc_cell = maze.find_nearest_path_cell((npc_world_target[0], npc_world_target[1]), search_radius=10)
+        if npc_cell is None:
+            continue  # Skip this NPC if no valid path cell found
+        
+        # Ensure chunk is loaded for the NPC position
         npc_world_temp = maze.cell_to_world(npc_cell)
         maze._ensure_chunks_loaded(npc_world_temp)
         
-        # Verify it's a path, if not find nearby
-        chunk_x = npc_cell[0] // maze.chunk_size
-        chunk_y = npc_cell[1] // maze.chunk_size
-        if npc_cell[0] < 0:
-            chunk_x = (npc_cell[0] - maze.chunk_size + 1) // maze.chunk_size
-        if npc_cell[1] < 0:
-            chunk_y = (npc_cell[1] - maze.chunk_size + 1) // maze.chunk_size
-        
-        chunk = maze._get_or_create_chunk(chunk_x, chunk_y)
-        local_x = npc_cell[0] % maze.chunk_size
-        local_y = npc_cell[1] % maze.chunk_size
-        if npc_cell[0] < 0:
-            local_x = (npc_cell[0] % maze.chunk_size + maze.chunk_size) % maze.chunk_size
-        if npc_cell[1] < 0:
-            local_y = (npc_cell[1] % maze.chunk_size + maze.chunk_size) % maze.chunk_size
-        
-        if (local_x, local_y) not in chunk.paths:
-            # Try nearby cells
-            for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-                test_cell = (npc_cell[0] + dx, npc_cell[1] + dy)
-                test_chunk_x = test_cell[0] // maze.chunk_size
-                test_chunk_y = test_cell[1] // maze.chunk_size
-                if test_cell[0] < 0:
-                    test_chunk_x = (test_cell[0] - maze.chunk_size + 1) // maze.chunk_size
-                if test_cell[1] < 0:
-                    test_chunk_y = (test_cell[1] - maze.chunk_size + 1) // maze.chunk_size
-                test_chunk = maze._get_or_create_chunk(test_chunk_x, test_chunk_y)
-                test_local_x = test_cell[0] % maze.chunk_size
-                test_local_y = test_cell[1] % maze.chunk_size
-                if test_cell[0] < 0:
-                    test_local_x = (test_cell[0] % maze.chunk_size + maze.chunk_size) % maze.chunk_size
-                if test_cell[1] < 0:
-                    test_local_y = (test_cell[1] % maze.chunk_size + maze.chunk_size) % maze.chunk_size
-                if (test_local_x, test_local_y) in test_chunk.paths:
-                    npc_cell = test_cell
-                    break
-        
+        # Get final world position for NPC
         npc_world = maze.cell_to_world(npc_cell)
         npc = GameEntity(
             id=f'npc_{i}',
@@ -3776,22 +4482,39 @@ def main():
                 'path_index': 0,  # Current waypoint index
                 'last_path_update': 0.0,  # Last time path was calculated
                 'on_ground': True  # Start on ground
-            }
+            },
+            height=PLAYER_HEIGHT_UNITS  # 6 feet = 180 units
         )
         engine.add_entity(npc)
+        npc_count += 1
     
-    print("\n" + "="*60)
-    print("KOPIS ENGINE - Pygame Visualization with Maze (3D FPV)")
-    print("="*60)
-    print("Controls: W/A/S/D to move, SPACE to jump, Mouse to look around (6DOF)")
-    print("Mouse is captured in FPV mode - ESC releases capture, click to recapture")
-    print("6DOF Camera: Mouse for yaw/pitch (unlimited 360°), Q/E for roll")
-    print("F11: Toggle fullscreen mode")
-    print("NPCs will automatically move towards the player")
-    print("Navigate through the maze - avoid walls!")
-    print("Sound effects: footsteps and collisions")
-    print("3D rendering with first-person view (FPV)")
-    print("="*60)
+    print(f"    ✓ Spawned {npc_count} NPCs within 10 second travel distance")
+    print("\n" + "=" * 60)
+    print("GAME READY - Starting...")
+    print("=" * 60)
+    print("\nCONTROLS:")
+    print("  Movement:")
+    print("    W/A/S/D        - Move forward/left/backward/right (strafe)")
+    print("    SPACE          - Jump")
+    print("    Mouse          - Look around (rotate camera)")
+    print("  Combat:")
+    print("    Left Click     - Swing sword (deal 20 damage)")
+    print("    Touch (Mobile) - Swing sword")
+    print("  Camera:")
+    print("    Q/E            - Roll camera (tilt left/right)")
+    print("    ESC            - Release mouse cursor")
+    print("  Display:")
+    print("    F11            - Toggle fullscreen mode")
+    print("\nGAMEPLAY TIPS:")
+    print("  • NPCs move toward you - use your sword to fight them")
+    print("  • Avoid NPC contact - each touch deals 5 damage to you")
+    print("  • Sword hits deal 20 damage to NPCs")
+    print("  • Explore the infinite maze - find stairs to change levels")
+    print("  • Each story is 10 feet tall, you're 6 feet tall")
+    print("  • Watch your health in the top-left corner")
+    print("\n" + "=" * 60)
+    print("Press any key after acknowledging the epilepsy warning to start...")
+    print("=" * 60 + "\n")
     
     running = True
     frame = 0
@@ -3868,14 +4591,29 @@ def main():
             camera_roll = engine.camera_roll
             fpv_mode = engine.fpv_mode
             
-            # Render with pygame (FPV mode with 6DOF)
-            renderer.render(engine.entities, camera_pos, frame, current_fps, camera_yaw, camera_pitch, camera_roll, fpv_mode)
+            # Render with pygame (FPV mode with 6DOF), passing settings
+            renderer.render(engine.entities, camera_pos, frame, current_fps, camera_yaw, camera_pitch, camera_roll, fpv_mode, engine.sword_swing_state, settings)
             
             # No sleep needed - clock.tick_busy_loop handles timing
             # This allows higher FPS while maintaining smooth frame pacing
     
     except KeyboardInterrupt:
-        print("\n\nGame interrupted")
+        print("\n\n" + "=" * 60)
+        print("GAME INTERRUPTED")
+        print("=" * 60)
+        print("Game was stopped by user (Ctrl+C)")
+        print("Thanks for playing Kopis Engine!")
+        print("=" * 60)
+    except Exception as e:
+        print("\n\n" + "=" * 60)
+        print("ERROR: Game crashed")
+        print("=" * 60)
+        print(f"An unexpected error occurred: {type(e).__name__}")
+        print(f"Error message: {str(e)}")
+        print("\nIf this problem persists, please report it with the error details above.")
+        print("=" * 60)
+        import traceback
+        traceback.print_exc()
     
     finally:
         # Cleanup
@@ -3885,13 +4623,77 @@ def main():
         engine.cleanup()
         
         # Print final stats
-        print("\n" + "="*60)
-        print("FINAL STATISTICS")
-        print("="*60)
-        stats = engine.get_stats()
-        print(json.dumps(stats, indent=2))
-        print("="*60)
+        print("\n" + "=" * 60)
+        print("GAME SESSION STATISTICS")
+        print("=" * 60)
+        try:
+            stats = engine.get_stats()
+            print(json.dumps(stats, indent=2))
+        except Exception as e:
+            print(f"Could not retrieve statistics: {e}")
+        print("=" * 60)
+        print("\nThanks for playing Kopis Engine!")
+        print("Run the game again anytime with: python kopis_engine.py\n")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    
+    # Set up command-line argument parsing
+    parser = argparse.ArgumentParser(
+        description='Kopis Engine - A transformer-based 3D game engine',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python kopis_engine.py              # Run with default settings
+  python kopis_engine.py --width 1920  # Run with custom window width
+  python kopis_engine.py --fullscreen  # Run in fullscreen mode
+  
+For more information, see the docstring at the top of this file.
+        """
+    )
+    parser.add_argument('--width', type=int, default=800,
+                       help='Window width in pixels (default: 800)')
+    parser.add_argument('--height', type=int, default=600,
+                       help='Window height in pixels (default: 600)')
+    parser.add_argument('--fullscreen', action='store_true',
+                       help='Start in fullscreen mode')
+    parser.add_argument('--no-sound', action='store_true',
+                       help='Disable sound effects')
+    
+    args = parser.parse_args()
+    
+    # Override renderer size if specified (this would need to be passed to renderer)
+    # For now, just show a message if custom size is requested
+    if args.width != 800 or args.height != 600:
+        print(f"Note: Custom window size requested: {args.width}x{args.height}")
+        print("      (Currently using default 800x600 - custom sizes coming soon)")
+    
+    if args.fullscreen:
+        print("Note: Fullscreen mode requested")
+        print("      (Press F11 in-game to toggle fullscreen)")
+    
+    if args.no_sound:
+        print("Note: Sound disabled via command line")
+        # This would need to be passed to SoundManager
+    
+    # Run the game
+    try:
+        main()
+    except SystemExit:
+        # Allow sys.exit() calls to work normally
+        raise
+    except Exception as e:
+        print("\n" + "=" * 60)
+        print("FATAL ERROR: Game could not start")
+        print("=" * 60)
+        print(f"Error: {type(e).__name__}: {str(e)}")
+        print("\nTroubleshooting:")
+        print("  1. Make sure pygame is installed: pip install pygame")
+        print("  2. Check that you have Python 3.7 or higher")
+        print("  3. Try updating pygame: pip install --upgrade pygame")
+        print("  4. Report this error if it persists")
+        print("=" * 60)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
